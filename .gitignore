@@ -1,0 +1,8 @@
+*.pdf
+*.md
+!GEMINI.md
+!README.md
+HR_Data_Summary.csv
+__pycache__/
+.pytest_cache/
+*.pyc
