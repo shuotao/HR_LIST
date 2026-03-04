@@ -12,7 +12,7 @@ def extract_from_md(file_path):
         with open(file_path, 'r', encoding='utf-8') as f:
             raw_content = f.read()
     except Exception:
-        return ["Error", "", "", "", "", ""]
+        return ["Error", "", "", "", "", "", ""]
 
     content = normalize_text(raw_content)
     # Clean up page breaks and extra carriage returns
@@ -24,6 +24,7 @@ def extract_from_md(file_path):
     education = ""
     recent_work = ""
     seniority = ""
+    language_skills = ""
     companies = []
 
     # 1. Name & Age
@@ -44,9 +45,15 @@ def extract_from_md(file_path):
     # Extract Blocks helper
     def get_block(start_kw, stop_kws):
         start_idx = -1
+        # Normalize search keyword
+        start_kw_norm = normalize_text(start_kw).replace(" ", "")
+        stop_kws_norm = [normalize_text(kw).replace(" ", "") for kw in stop_kws]
+
         for i, l in enumerate(lines):
             # removing spaces to match strictly
-            if start_kw in l.replace(" ", "") and len(l) < 20: 
+            # and normalizing line to catch variations
+            l_norm = normalize_text(l).replace(" ", "")
+            if start_kw_norm in l_norm and len(l) < 20: 
                 start_idx = i
                 break
         
@@ -56,11 +63,89 @@ def extract_from_md(file_path):
         for j in range(start_idx + 1, len(lines)):
             l = lines[j]
             if not l: continue
-            if any(stop in l.replace(" ", "") for stop in stop_kws):
+            l_norm = normalize_text(l).replace(" ", "")
+            if any(stop in l_norm for stop in stop_kws_norm):
                 break
             block_lines.append(l)
             
         return " ".join(block_lines).strip()
+
+    # 2. Language Skills - Smart pairing to fix MarkItDown split-line issue
+    known_langs = ["中文", "英文", "台語", "日文", "粵語", "客家語", "印尼文",
+                   "西班牙文", "泰文", "上海話", "韓文", "法文", "德文", "越南文"]
+    lang_stop_kws = ["技能專長", "專長", "認證資格", "自傳", "求職條件", "附件", "最高學歷", "教育背景"]
+    lang_stop_norms = [normalize_text(kw).replace(" ", "") for kw in lang_stop_kws]
+
+    lang_start = -1
+    for i, l in enumerate(lines):
+        l_norm = normalize_text(l).replace(" ", "")
+        if "語文能力" in l_norm and len(l) < 20:
+            lang_start = i
+            break
+
+    if lang_start != -1:
+        lang_lines = []
+        for j in range(lang_start + 1, len(lines)):
+            l = lines[j]
+            if not l: continue
+            l_norm = normalize_text(l).replace(" ", "")
+            if any(stop in l_norm for stop in lang_stop_norms):
+                break
+            lang_lines.append(l.strip())
+
+        # Classify each line
+        languages_found = []
+        proficiencies_found = []
+        test_scores_found = []
+
+        for line in lang_lines:
+            # Check known language name
+            if line in known_langs:
+                languages_found.append(line)
+            # Detailed proficiency: 聽/X、說/X、讀/X、寫/X
+            elif re.match(r'聽/.+', line):
+                proficiencies_found.append(line)
+            # Simple proficiency word
+            elif line in ["精通", "中等", "略懂", "不會"]:
+                proficiencies_found.append(line)
+            # Test scores (TOEIC, GEPT, etc.)
+            elif any(kw in line for kw in ["TOEIC", "多益", "GEPT", "英檢"]):
+                test_scores_found.append(line)
+
+        # Simplify detailed proficiency if all 4 skills are the same level
+        def simplify_prof(prof):
+            if not prof.startswith("聽/"):
+                return prof
+            levels = re.findall(r'[聽說讀寫]/([^\s、]+)', prof)
+            if levels and len(set(levels)) == 1:
+                return levels[0]
+            return prof
+
+        # Pair languages with proficiencies positionally
+        lang_prof_map = {}
+        for i, lang in enumerate(languages_found):
+            prof = proficiencies_found[i] if i < len(proficiencies_found) else ""
+            if prof:
+                prof = simplify_prof(prof)
+            lang_prof_map[lang] = prof
+
+        # Build output: English first with proficiency + test score, then others (name only)
+        parts = []
+
+        # English first
+        if "英文" in lang_prof_map:
+            eng_prof = lang_prof_map["英文"]
+            eng_str = f"英文({eng_prof})" if eng_prof else "英文"
+            if test_scores_found:
+                eng_str += " " + " ".join(test_scores_found)
+            parts.append(eng_str)
+
+        # Other languages (no proficiency, just name)
+        for lang in languages_found:
+            if lang != "英文":
+                parts.append(lang)
+
+        language_skills = "、".join(parts) if parts else ""
 
     # 2. Education
     education = get_block("最高學歷", ["希望職稱", "最近工作", "總年資", "居住地", "代碼"])
@@ -111,14 +196,14 @@ def extract_from_md(file_path):
     if not name:
         name = os.path.splitext(os.path.basename(file_path))[0]
 
-    return [name, age, education, recent_work, seniority, prev_companies]
+    return [name, age, language_skills, education, recent_work, seniority, prev_companies]
 
 def process_all():
     base_dir = r"c:\Users\01102088\Desktop\HRMD"
     md_files = sorted([f for f in os.listdir(base_dir) if f.lower().endswith('.md') and not f.startswith('README') and f != 'GEMINI.md'])
     
     data = []
-    header = ['姓名', '年紀', '學歷', '近期工作', '總年資', '前二次任職公司']
+    header = ['姓名', '年紀', '語文能力', '學歷', '近期工作', '總年資', '前二次任職公司']
     
     for f in md_files:
         row = extract_from_md(os.path.join(base_dir, f))
@@ -140,7 +225,7 @@ def process_all():
     
     for idx in sample_indices:
         md_file = md_files[idx]
-        name, age, edu, work, senior, prev = data[idx]
+        name, age, lang, edu, work, senior, prev = data[idx]
         
         md_path = os.path.join(base_dir, md_file)
         try:
