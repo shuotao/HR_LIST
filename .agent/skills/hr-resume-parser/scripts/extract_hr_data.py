@@ -23,6 +23,7 @@ def extract_from_md(file_path):
     age = ""
     education = ""
     recent_work = ""
+    recent_work_desc = ""
     seniority = ""
     language_skills = ""
     companies = []
@@ -171,7 +172,7 @@ def extract_from_md(file_path):
                         break
                 if seniority: break
 
-    # 5. Work History for Previous 2 Companies
+    # 5. Work History for Previous 2 Companies & Recent Work Description
     exp_idx = -1
     for i, l in enumerate(lines):
         if "工作經歷" in l.replace(" ", ""):
@@ -179,16 +180,42 @@ def extract_from_md(file_path):
             break
             
     if exp_idx != -1:
+        job_indices = []
         for j in range(exp_idx + 1, len(lines)):
-            l = lines[j]
+            stop_kws = ["教育背景", "個⼈資料", "個人資料", "技能專長"]
+            l_norm = normalize_text(lines[j]).replace(" ", "")
+            if any(stop in l_norm for stop in stop_kws):
+                break
             # Match company and date, e.g. "公司名稱 職稱 2020/01~"
-            if re.search(r'\d{4}/\d{2}~', l):
-                parts = l.split()
+            if re.search(r'\d{4}/\d{2}~', lines[j]):
+                job_indices.append(j)
+                parts = lines[j].split()
                 if parts:
                     cname = parts[0].strip()
                     if cname and cname not in companies and not any(x in cname for x in ["總年資", "更新日", "代碼"]):
                         companies.append(cname)
                         
+        if job_indices:
+            start_idx = job_indices[0]
+            end_idx = job_indices[1] if len(job_indices) > 1 else len(lines)
+            
+            desc_lines = []
+            capturing = False
+            for j in range(start_idx, end_idx):
+                l_norm = normalize_text(lines[j]).replace(" ", "")
+                if "工作內容" in l_norm:
+                    capturing = True
+                    # Remove the prefix
+                    first_line = lines[j]
+                    for variant in ["工作內容", "⼯作內容"]:
+                        first_line = first_line.replace(variant, "", 1).strip()
+                    if first_line:
+                        desc_lines.append(first_line)
+                    continue
+                if capturing and lines[j].strip():
+                    desc_lines.append(lines[j].strip())
+            recent_work_desc = " ".join(desc_lines).strip()
+
     # The first company is usually the recent one. We need the previous 2 (index 1 and 2)
     prev_companies = "、".join(companies[1:3]) if len(companies) > 1 else ""
 
@@ -196,14 +223,14 @@ def extract_from_md(file_path):
     if not name:
         name = os.path.splitext(os.path.basename(file_path))[0]
 
-    return [name, age, language_skills, education, recent_work, seniority, prev_companies]
+    return [name, age, language_skills, education, recent_work, recent_work_desc, seniority, prev_companies]
 
 def process_all():
     base_dir = r"c:\Users\01102088\Desktop\HRMD"
     md_files = sorted([f for f in os.listdir(base_dir) if f.lower().endswith('.md') and not f.startswith('README') and f != 'GEMINI.md'])
     
     data = []
-    header = ['姓名', '年紀', '語文能力', '學歷', '近期工作', '總年資', '前二次任職公司']
+    header = ['姓名', '年紀', '語文能力', '學歷', '近期工作', '近期工作內容', '總年資', '前二次任職公司']
     
     for f in md_files:
         row = extract_from_md(os.path.join(base_dir, f))
@@ -225,7 +252,7 @@ def process_all():
     
     for idx in sample_indices:
         md_file = md_files[idx]
-        name, age, lang, edu, work, senior, prev = data[idx]
+        name, age, lang, edu, work, work_desc, senior, prev = data[idx]
         
         md_path = os.path.join(base_dir, md_file)
         try:

@@ -2,7 +2,10 @@
 *.md
 !GEMINI.md
 !README.md
+!.agent/skills/**/SKILL.md
+!.agent/skills/**/references/*.md
 HR_Data_Summary.csv
+.agent/skills/**/references/historical_selections.csv
 __pycache__/
 .pytest_cache/
 *.pyc
