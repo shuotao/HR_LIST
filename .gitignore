@@ -2,6 +2,7 @@
 *.md
 !GEMINI.md
 !README.md
+!人才候選計畫.md
 !.agent/skills/**/SKILL.md
 !.agent/skills/**/references/*.md
 HR_Data_Summary.csv
