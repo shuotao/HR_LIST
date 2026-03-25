@@ -5,6 +5,7 @@
 !人才候選計畫.md
 !.agent/skills/**/SKILL.md
 !.agent/skills/**/references/*.md
+!.claude/commands/*.md
 HR_Data_Summary.csv
 .agent/skills/**/references/historical_selections.csv
 __pycache__/
