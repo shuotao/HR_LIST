@@ -14,7 +14,7 @@ def main():
     
     for pdf in pdf_files:
         pdf_path = os.path.join(base_dir, pdf)
-        md_path = os.path.join(base_dir, pdf.replace('.pdf', '.md'))
+        md_path = os.path.join(base_dir, os.path.splitext(pdf)[0] + '.md')
         
         # skip if already exists and has content
         if os.path.exists(md_path) and os.path.getsize(md_path) > 10:

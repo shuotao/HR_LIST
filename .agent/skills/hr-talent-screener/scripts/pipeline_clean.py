@@ -12,6 +12,10 @@ pipeline_clean.py — ANALYSIS.md 三階段清洗管線
 import sys
 import re
 import os
+import io
+
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 
 # ============================
@@ -85,8 +89,8 @@ def stage2_deduplicate(lines):
     dup_count = 0
 
     for idx, id_line_num in enumerate(id_indices):
-        start = id_line_num - 4
-        end = id_indices[idx + 1] - 4 if idx + 1 < len(id_indices) else len(lines)
+        start = max(0, id_line_num - 4)
+        end = max(0, id_indices[idx + 1] - 4) if idx + 1 < len(id_indices) else len(lines)
 
         match = re.search(r'代碼：(\d+)', lines[id_line_num])
         if match:
@@ -146,8 +150,8 @@ def stage3_classify_sort(lines):
     g1, g2, g3 = [], [], []
 
     for idx, id_line_num in enumerate(id_indices):
-        start = id_line_num - 4
-        end = id_indices[idx + 1] - 4 if idx + 1 < len(id_indices) else len(lines)
+        start = max(0, id_line_num - 4)
+        end = max(0, id_indices[idx + 1] - 4) if idx + 1 < len(id_indices) else len(lines)
         block = lines[start:end]
         edu = _find_edu_line(block)
 

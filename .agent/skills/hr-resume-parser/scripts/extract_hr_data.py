@@ -1,7 +1,12 @@
 import os
 import csv
 import re
+import sys
+import io
 import unicodedata
+
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 def normalize_text(text):
     # Convert Kangxi Radicals and other variants to standard CJK characters
@@ -12,7 +17,7 @@ def extract_from_md(file_path):
         with open(file_path, 'r', encoding='utf-8') as f:
             raw_content = f.read()
     except Exception:
-        return ["Error", "", "", "", "", "", ""]
+        return ["Error", "", "", "", "", "", "", ""]
 
     content = normalize_text(raw_content)
     # Clean up page breaks and extra carriage returns
@@ -198,11 +203,15 @@ def extract_from_md(file_path):
         if job_indices:
             start_idx = job_indices[0]
             end_idx = job_indices[1] if len(job_indices) > 1 else len(lines)
-            
+            desc_stop_kws = ["教育背景", "個人資料", "技能專長", "語文能力", "求職條件", "自傳"]
+            desc_stop_norms = [normalize_text(kw).replace(" ", "") for kw in desc_stop_kws]
+
             desc_lines = []
             capturing = False
             for j in range(start_idx, end_idx):
                 l_norm = normalize_text(lines[j]).replace(" ", "")
+                if any(stop in l_norm for stop in desc_stop_norms):
+                    break
                 if "工作內容" in l_norm:
                     capturing = True
                     # Remove the prefix
@@ -227,7 +236,8 @@ def extract_from_md(file_path):
 
 def process_all():
     base_dir = r"c:\Users\01102088\Desktop\HRMD"
-    md_files = sorted([f for f in os.listdir(base_dir) if f.lower().endswith('.md') and not f.startswith('README') and f != 'GEMINI.md'])
+    skip_files = {'README.md', 'GEMINI.md', 'ANALYSIS.md', 'clear_RULE.md', '人才候選計畫.md', 'LINK.MD'}
+    md_files = sorted([f for f in os.listdir(base_dir) if f.lower().endswith('.md') and f not in skip_files])
     
     data = []
     header = ['姓名', '年紀', '語文能力', '學歷', '近期工作', '近期工作內容', '總年資', '前二次任職公司']

@@ -11,6 +11,11 @@ screen_candidates.py — 候選人篩選引擎
 import sys
 import re
 import os
+import io
+
+# Ensure UTF-8 output on Windows terminals (prevents cp950 UnicodeEncodeError)
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 # ============================
 # 規則定義（來自人才候選計畫.md）
@@ -21,6 +26,7 @@ TITLE_KEYWORDS = [
     '機電', '廠務', '空調', 'HVAC', '監造', '監工', '水處理', '純水',
     '廢水', '管線', '配管', '電機', '機械', '水電', '工程師', '主任',
     '副主任', '課長', '副理', '專案', '工務', '儀電', '技術員',
+    '品管', '採購', '維運', '繪圖員', '襄理', '組長', '焊工', '營造工程師',
 ]
 
 # 必要條件 M2: 產業/公司關鍵字
@@ -29,6 +35,8 @@ COMPANY_KEYWORDS = [
     '營造', '建設', '台積', '世界先進', '美光', '聯電', '欣興',
     '長春', '亞東氣體', '東元', '中興電工', '士林電機', '能源',
     '半導體', '光電', 'EPC', '統包', '建廠', '擴廠',
+    '大陸工程', '日月光', '力晶', '鴻海', '齊裕', '中麟', '閎大', '立穩',
+    '臻鼎', '台灣神隆', '中聯資源', '泰創', '興富發', '日揮', '恩智浦',
 ]
 
 # 加分條件 N1: 學歷科系關鍵字 (★★★)
@@ -42,6 +50,7 @@ EDU_KEYWORDS = [
 PREMIUM_COMPANIES = [
     '中鼎', '泰興', '達欣', '潤弘', '大林組', '仲量聯行', 'JLL',
     '台積', '世界先進', '美光', '聯電', '欣興', '長春', '亞東氣體',
+    '大陸工程', '日月光', '力晶', '鴻海', '臻鼎', '台灣神隆', '日揮', '恩智浦',
 ]
 
 # 加分條件 N4: 管理職關鍵字 (★★☆)
@@ -54,6 +63,9 @@ MULTISYS_KEYWORDS = [
     'BIM', 'Revit', 'AutoCAD', 'PLC', 'DCS', 'SCADA', 'DDC',
     '中央監控', '建廠', '擴廠', 'EPC', '統包', 'MEP', '五大管線',
     '機電', '變電', '發電機', 'UPS', 'P&ID',
+    'BMS', 'BACnet', 'Modbus', '充電樁', '太陽能', '逆變器', '儲能',
+    '高低壓', '變電站', '鋼構', '焊接', '品管', '查驗', '品質管理',
+    '計價', '發包', '水污', '空污', '號誌', '軌道', '捷運',
 ]
 
 # 排除條件
@@ -77,17 +89,7 @@ def parse_candidates(lines):
             id_indices.append(i)
 
     candidates = []
-    current_group = "未分類"
 
-    for i, line in enumerate(lines):
-        if '【第一區塊' in line:
-            current_group = 'G1_土木建築'
-        elif '【第二區塊' in line:
-            current_group = 'G2_機電相關'
-        elif '【第三區塊' in line:
-            current_group = 'G3_其他'
-
-    # Reset and rebuild with group tracking
     group_ranges = []
     for i, line in enumerate(lines):
         if '【第一區塊' in line:
@@ -105,8 +107,8 @@ def parse_candidates(lines):
         return g
 
     for idx, id_line_num in enumerate(id_indices):
-        start = id_line_num - 4
-        end = id_indices[idx + 1] - 4 if idx + 1 < len(id_indices) else len(lines)
+        start = max(0, id_line_num - 4)
+        end = max(0, id_indices[idx + 1] - 4) if idx + 1 < len(id_indices) else len(lines)
         block = lines[start:end]
 
         name = block[0].strip() if block else ""
@@ -236,15 +238,35 @@ def score_candidate(c):
         score += 5
         reasons.append(f"N5系統: {','.join(n5_hits[:3])}")
 
-    # N7: 監造/品管 (★★☆)
-    if any(kw in full for kw in ['監造', '品管', '品質管理', '查驗']):
+    # N7: 監造 (★★☆) — 品管已移至 N13 獨立計分
+    if any(kw in full for kw in ['監造', '監工', '施工監督']):
         score += 5
-        reasons.append("N7監造/品管經驗")
+        reasons.append("N7監造經驗")
 
     # N8: 建廠/擴廠 (★★☆)
     if any(kw in full for kw in ['建廠', '擴廠', '擴建', '新建', 'EPC']):
         score += 5
         reasons.append("N8建廠/擴廠經驗")
+
+    # N13: 品管 (★★☆)
+    if any(kw in full for kw in ['品管', '品質管理', '查驗', '品管工程師']):
+        score += 5
+        reasons.append("N13品管經驗")
+
+    # N14: 採購/發包 (★☆☆)
+    if any(kw in full for kw in ['採購', '發包', '議價', '標單']):
+        score += 3
+        reasons.append("N14採購/發包經驗")
+
+    # N15: 能源工程 (★☆☆)
+    if any(kw in full for kw in ['太陽能', '儲能', '充電樁', '逆變器', '高低壓']):
+        score += 3
+        reasons.append("N15能源工程經驗")
+
+    # N16: 鋼構/焊接 (★☆☆)
+    if any(kw in full for kw in ['鋼構', '焊接', 'CO2焊', '鋼結構']):
+        score += 3
+        reasons.append("N16鋼構/焊接經驗")
 
     return score, reasons, False
 
