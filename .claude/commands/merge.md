@@ -2,6 +2,10 @@
 
 ## 任務：將 PDF 履歷批次轉換為結構化 CSV
 
+> 這是整個流程的 Step 2。
+> 前置條件：HR 已經執行過 `/filter` 篩出候選人，並到 104 下載了那些人的 PDF 完整履歷，放在專案根目錄下。
+> 本步驟的目的是把那些 PDF 轉成結構化的 `HR_Data_Summary.csv`，方便 HR 比較與決策。
+
 ### 步驟 1：PDF 轉 Markdown
 執行以下指令：
 ```
@@ -22,3 +26,5 @@ c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe .agent/skills/hr-
 
 ### 步驟 4：完成
 告知使用者 `HR_Data_Summary.csv` 已產出，採 `utf-8-sig` 編碼可直接用 Excel 開啟。
+
+> 下一步：用 `/improve` 將這份 CSV（已確認的選人結果）回饋到篩選規則中，讓下次 `/filter` 更精準。

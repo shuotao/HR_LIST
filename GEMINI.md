@@ -11,49 +11,86 @@
 
 ## 專案總覽
 
-本專案為「104 履歷自動化解析與人才篩選系統」，包含兩大技能：
+本專案為「104 履歷自動化解析與人才篩選系統」，用於協助 HR 從 104 人力銀行的大量候選人中，快速篩選出符合機電/廠務/工程職缺的面試人選。
 
-### 技能一：hr-resume-parser（履歷解析）
-- **用途**：將 104 系統匯出的個別候選人 PDF 履歷，轉為結構化 CSV
+### 業務流程（必須理解的上下游關係）
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  104 人力銀行                                                    │
+│                                                                  │
+│  HR 在 104 系統上以條件搜尋，得到數百位候選人的「摘要清單」        │
+│  （姓名、年齡、學歷、希望職稱、工作經驗摘要）                     │
+│  → 這份清單被擷取下來，就是 ANALYSIS.md                          │
+│                                                                  │
+│  HR 從清單中挑出有興趣的人，逐一下載他們的「完整 PDF 履歷」       │
+│  → 這些 PDF 就是專案根目錄下的 *.pdf 檔案                        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**因此，正確的作業順序是：**
+
+```
+ANALYSIS.md（上游：大池子，數百人摘要）
+    │
+    ▼
+Step 1: /filter — 篩選：從大池子中挑出值得深入看的人
+    │
+    ▼
+HR 根據篩選結果，到 104 下載那些人的 PDF 完整履歷
+    │
+    ▼
+Step 2: /merge — 合併：把 PDF 轉成結構化 CSV（HR_Data_Summary.csv）
+    │
+    ▼
+Step 3: /improve — 精煉：用 CSV（已確認的最終選人）回頭精煉篩選規則
+                          讓下一次 /filter 更精準
+```
+
+> **關鍵認知：ANALYSIS.md 是上游（粗篩來源），PDF 是下游（精選結果）。**
+> Agent 絕不可搞反這個順序。
+
+---
+
+## 兩大技能
+
+### 技能一：hr-talent-screener（人才篩選）— 對應 `/filter`
+- **輸入**：`ANALYSIS.md`（104 系統擷取的大量候選人摘要清單）
+- **處理**：三階段清洗（雜訊移除 → 代碼去重 → 學歷分類排序）→ M/N/E 規則評分
+- **產出**：候選人名單 + 各人命中理由摘要
+- **SKILL 文件**：`.agent/skills/hr-talent-screener/SKILL.md`
+- **腳本**：
+  - `scripts/pipeline_clean.py` — 三階段清洗
+  - `scripts/screen_candidates.py` — 評分篩選引擎
+  - `scripts/pick_candidates_util.py` — 輔助工具
+
+### 技能二：hr-resume-parser（履歷解析）— 對應 `/merge`
+- **輸入**：HR 從 104 下載的個別候選人 PDF 履歷（`*.pdf`）
+- **處理**：PDF → Markdown → 8 大欄位擷取 + 防幻覺驗證
+- **產出**：`HR_Data_Summary.csv`（utf-8-sig 編碼）
 - **SKILL 文件**：`.agent/skills/hr-resume-parser/SKILL.md`
 - **腳本**：
   - `scripts/convert_pdfs.py` — PDF 轉 Markdown
-  - `scripts/extract_hr_data.py` — Markdown 擷取 8 大欄位，產出 `HR_Data_Summary.csv`
-- **產出**：`HR_Data_Summary.csv`（utf-8-sig 編碼）
+  - `scripts/extract_hr_data.py` — Markdown 擷取欄位，產出 CSV
 
-### 技能二：hr-talent-screener（人才篩選）
-- **用途**：從 104 系統擷取的大量候選人資料（ANALYSIS.md）中，篩選出符合機電/廠務/工程職缺的面試候選人
-- **SKILL 文件**：`.agent/skills/hr-talent-screener/SKILL.md`
-- **腳本**：
-  - `scripts/pipeline_clean.py` — 三階段清洗（雜訊移除 → 代碼去重 → 學歷分類排序）
-  - `scripts/screen_candidates.py` — 評分篩選引擎（M/N/E 規則）
-  - `scripts/pick_candidates_util.py` — 輔助工具
-- **參考文件**（位於 `references/`）：
-  - `screening_rules.md` — 跨批次永久有效的純規則手冊
-  - `iteration_log.md` — 疊代日誌（歷史累積，只追加不刪除）
-  - `historical_selections.csv` — 歷史選人紀錄（跨批次累積）
-  - `clear_RULE.md` — 三階段清洗規則定義
+### 疊代學習 — 對應 `/improve`
+- **輸入**：`HR_Data_Summary.csv`（已確認的選人結果）或使用者的漏選/誤選回饋
+- **處理**：比對選人特徵 vs 現行規則 → 找出缺口 → 更新規則與程式碼
+- **更新目標**：
+  - `references/screening_rules.md`（規則）+ `screen_candidates.py`（程式碼）
+  - `references/iteration_log.md`（日誌追加）+ `references/historical_selections.csv`（歷史資料追加）
 
-### 工作流程
+---
 
-典型的完整流程為三個階段：
+## 參考文件
 
-1. **合併（Merge）**：PDF 履歷 → CSV 結構化資料
-   ```
-   python scripts/convert_pdfs.py
-   python scripts/extract_hr_data.py
-   ```
-
-2. **篩選（Filter）**：ANALYSIS.md → 三階段清洗 → 評分篩選 → 候選名單
-   ```
-   python scripts/pipeline_clean.py ANALYSIS.md
-   python scripts/screen_candidates.py ANALYSIS.md
-   ```
-
-3. **精煉（Improve）**：根據使用者回饋或最新 CSV，疊代更新規則
-   - 分析新批次選人特徵 vs 現行規則的差異
-   - 更新 `screening_rules.md`（規則）+ `screen_candidates.py`（程式碼）
-   - 追加 `iteration_log.md`（日誌）+ `historical_selections.csv`（歷史資料）
+| 文件 | 位置 | 用途 |
+|------|------|------|
+| screening_rules.md | hr-talent-screener/references/ | 跨批次永久有效的純規則手冊（M/N/E 條件 + 關鍵字 + 經驗法則） |
+| iteration_log.md | hr-talent-screener/references/ | 疊代日誌（歷史累積，只追加不刪除） |
+| historical_selections.csv | hr-talent-screener/references/ | 歷史選人紀錄（跨批次累積） |
+| clear_RULE.md | hr-talent-screener/references/ | 三階段清洗規則定義 |
+| 人才候選計畫.md | 專案根目錄 | 基於首批 56 位選人反推的企業畫像與規則起源 |
 
 ---
 
