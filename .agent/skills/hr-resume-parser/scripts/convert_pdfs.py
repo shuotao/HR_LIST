@@ -1,6 +1,11 @@
 import os
 import sys
+import io
 from markitdown import MarkItDown
+
+# Ensure UTF-8 output on Windows terminals (prevents cp950 UnicodeEncodeError)
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 def main():
     base_dir = r"c:\Users\01102088\Desktop\HRMD"
@@ -16,7 +21,8 @@ def main():
         pdf_path = os.path.join(base_dir, pdf)
         md_path = os.path.join(base_dir, os.path.splitext(pdf)[0] + '.md')
         
-        # skip if already exists and has content
+        # 冪等設計：若 .md 已存在且有內容（>10 bytes），跳過不重複轉換。
+        # 若需強制重轉，先手動刪除對應的 .md 檔案。
         if os.path.exists(md_path) and os.path.getsize(md_path) > 10:
             continue
             

@@ -48,7 +48,8 @@ def extract_from_md(file_path):
                     name = line.split(age)[0].strip()
                     break
 
-    # Extract Blocks helper
+    # 通用區塊擷取工具：找到 start_kw 所在行，往下收集直到遇到 stop_kws 中任一關鍵字。
+    # 若找不到 start_kw，回傳空字串（靜默失敗，不中斷處理）。
     def get_block(start_kw, stop_kws):
         start_idx = -1
         # Normalize search keyword
@@ -77,6 +78,7 @@ def extract_from_md(file_path):
         return " ".join(block_lines).strip()
 
     # 2. Language Skills - Smart pairing to fix MarkItDown split-line issue
+    # 已知語言白名單（104 系統常見語種）。不在此清單的語言會被靜默跳過。
     known_langs = ["中文", "英文", "台語", "日文", "粵語", "客家語", "印尼文",
                    "西班牙文", "泰文", "上海話", "韓文", "法文", "德文", "越南文"]
     lang_stop_kws = ["技能專長", "專長", "認證資格", "自傳", "求職條件", "附件", "最高學歷", "教育背景"]
@@ -235,50 +237,120 @@ def extract_from_md(file_path):
     return [name, age, language_skills, education, recent_work, recent_work_desc, seniority, prev_companies]
 
 def process_all():
+    import random
+
     base_dir = r"c:\Users\01102088\Desktop\HRMD"
-    skip_files = {'README.md', 'GEMINI.md', 'ANALYSIS.md', 'clear_RULE.md', '人才候選計畫.md', 'LINK.MD'}
-    md_files = sorted([f for f in os.listdir(base_dir) if f.lower().endswith('.md') and f not in skip_files])
-    
+
+    # === 白名單邏輯：只處理有對應 .pdf 的 .md 檔案 ===
+    pdf_set = {os.path.splitext(f)[0] for f in os.listdir(base_dir) if f.lower().endswith('.pdf')}
+    md_files = sorted([
+        f for f in os.listdir(base_dir)
+        if f.lower().endswith('.md') and os.path.splitext(f)[0] in pdf_set
+    ])
+
     data = []
-    header = ['姓名', '年紀', '語文能力', '學歷', '近期工作', '近期工作內容', '總年資', '前二次任職公司']
-    
+    header = ['序號', '姓名', '年紀', '語文能力', '學歷', '近期工作', '近期工作內容', '總年資', '前二次任職公司']
+
     for f in md_files:
         row = extract_from_md(os.path.join(base_dir, f))
         data.append(row)
-        
+
+    # === 加入三位數序號 ===
+    for i, row in enumerate(data):
+        row.insert(0, f"{i+1:03d}")
+
     csv_path = os.path.join(base_dir, 'HR_Data_Summary.csv')
     with open(csv_path, 'w', encoding='utf-8-sig', newline='') as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(header)
         writer.writerows(data)
-        
-    print(f"Processed {len(data)} files successfully. Output: HR_Data_Summary.csv")
 
-    # === 新增：程式自動防幻覺雙重檢驗 ===
-    import random
+    print(f"Processed {len(data)} candidate files. Output: HR_Data_Summary.csv")
+
+    # === 程式自動防幻覺檢驗（15 組）===
     print("\n--- 🤖 Python 自動防幻覺檢驗程序啟動 (零 Token 消耗) ---")
     indices = list(range(len(data)))
-    sample_indices = random.sample(indices, min(5, len(data)))
-    
+    sample_indices = random.sample(indices, min(15, len(data)))
+
     for idx in sample_indices:
         md_file = md_files[idx]
-        name, age, lang, edu, work, work_desc, senior, prev = data[idx]
-        
+        seq, name, age = data[idx][0], data[idx][1], data[idx][2]
+
         md_path = os.path.join(base_dir, md_file)
         try:
             with open(md_path, 'r', encoding='utf-8') as f_read:
-                # Same normalization applied for checking
                 raw_text = unicodedata.normalize('NFKC', f_read.read()).replace('\x0c', '\n').replace('\r', '\n')
-            
-            # Simple inclusion check. To prevent empty string matching issues, we check if truthy
+
             name_ok = (name in raw_text) if name else False
             age_ok = (age in raw_text) if age else False
-            
-            print(f"📌 抽檢檔案: {md_file}")
+
+            print(f"📌 抽檢 [{seq}] {md_file}")
             print(f"  ✓ 擷取姓名: {name} (原檔比對: {'通過' if name_ok else '未通過'})")
             print(f"  ✓ 擷取年紀: {age} (原檔比對: {'通過' if age_ok else '未通過'})")
         except Exception as e:
-            print(f"📌 抽檢檔案: {md_file} 讀檔比對失敗 ({e})")
+            print(f"📌 抽檢 [{seq}] {md_file} 讀檔比對失敗 ({e})")
+    print("----------------------------------------------------------")
+
+    # === PDF/MD 重新命名：加上序號前綴 ===
+    print("\n--- 📂 PDF/MD 序號重新命名 ---")
+    renamed_count = 0
+    rename_map = []  # (seq, original_name, new_pdf, new_md)
+
+    for i, md_file in enumerate(md_files):
+        seq = data[i][0]
+        base_name = os.path.splitext(md_file)[0]
+        # 若檔名已有序號前綴（如 001_），跳過
+        if re.match(r'^\d{3}_', base_name):
+            rename_map.append((seq, base_name, base_name + '.pdf', md_file))
+            continue
+
+        new_base = f"{seq}_{base_name}"
+        old_pdf = os.path.join(base_dir, base_name + '.pdf')
+        new_pdf = os.path.join(base_dir, new_base + '.pdf')
+        old_md = os.path.join(base_dir, md_file)
+        new_md = os.path.join(base_dir, new_base + '.md')
+
+        # 安全檢查：目標檔名不可已存在
+        if os.path.exists(new_pdf) and old_pdf != new_pdf:
+            print(f"  ❌ 錯誤：目標檔案已存在 {new_base}.pdf，中止改名")
+            sys.exit(1)
+        if os.path.exists(new_md) and old_md != new_md:
+            print(f"  ❌ 錯誤：目標檔案已存在 {new_base}.md，中止改名")
+            sys.exit(1)
+
+        if os.path.exists(old_pdf):
+            os.rename(old_pdf, new_pdf)
+        if os.path.exists(old_md):
+            os.rename(old_md, new_md)
+        renamed_count += 1
+        rename_map.append((seq, base_name, new_base + '.pdf', new_base + '.md'))
+
+    print(f"  完成：{renamed_count} 組檔案已加上序號前綴")
+
+    # === 改名後抽檢：確認外部檔名與 PDF 內部人名一致 ===
+    print("\n--- 🔍 改名後抽檢（外部檔名 vs 內部人名）---")
+    check_indices = random.sample(range(len(rename_map)), min(15, len(rename_map)))
+    all_passed = True
+
+    for idx in check_indices:
+        seq, orig_name, new_pdf_name, new_md_name = rename_map[idx]
+        csv_name = data[idx][1]  # 姓名欄位
+
+        # 從新檔名解析出人名部分
+        filename_name = re.sub(r'^\d{3}_', '', os.path.splitext(new_pdf_name)[0])
+
+        # 比對：檔名人名 == CSV 人名
+        match_ok = (filename_name == csv_name)
+
+        status = "✅ 通過" if match_ok else "❌ 不一致"
+        if not match_ok:
+            all_passed = False
+        print(f"  [{seq}] 檔名={filename_name}, CSV={csv_name} → {status}")
+
+    if all_passed:
+        print("  🎉 全部通過！外部檔名與內部人名完全一致。")
+    else:
+        print("  ⚠️ 存在不一致，請人工檢查！")
     print("----------------------------------------------------------\n")
 
 if __name__ == "__main__":

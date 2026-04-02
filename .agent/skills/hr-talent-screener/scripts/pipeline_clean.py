@@ -24,6 +24,8 @@ if sys.stdout.encoding != 'utf-8':
 def stage1_remove_noise(lines):
     """逐行比對，移除 104 系統的固定雜訊文字。"""
 
+    # 以下字串是 104 人力銀行網頁擷取時混入的系統文字（版權宣告、按鈕、狀態標籤等），
+    # 不屬於候選人資料，必須逐行比對移除。
     noise_exact = {
         "一零四資訊科技股份有限公司 版權所有 © 2026 建議瀏覽器 Chrome / IE11.0 以上",
         "會員須知 本系統提供之履歷僅供徵才目的使用，請勿違法蒐集或利用，以免觸犯個人資料保護法",
@@ -35,6 +37,7 @@ def stage1_remove_noise(lines):
         "未讀",
     }
 
+    # 104 系統上方選單列（連續多行），以整塊比對移除
     menu_block_lines = [
         "招募管理", "人才管理", "人資市集", "人資充電", "企業學習平台",
         "雇主品牌", "招募管理", "請輸入關鍵字",
@@ -80,7 +83,8 @@ def stage2_deduplicate(lines):
     if not id_indices:
         return lines, 0, 0
 
-    # 保留第一位候選人之前的文字（header）
+    # 候選人區塊結構：「代碼：」行的前 4 行是該候選人的 header（姓名、性別年齡、更新日等）
+    # 因此每位候選人的起始位置 = 代碼行 - 4
     first_start = max(0, id_indices[0] - 4)
     header = lines[:first_start]
 
@@ -89,6 +93,7 @@ def stage2_deduplicate(lines):
     dup_count = 0
 
     for idx, id_line_num in enumerate(id_indices):
+        # 每位候選人區塊：從代碼行前 4 行開始，到下一位候選人的代碼行前 4 行結束
         start = max(0, id_line_num - 4)
         end = max(0, id_indices[idx + 1] - 4) if idx + 1 < len(id_indices) else len(lines)
 
@@ -158,6 +163,8 @@ def stage3_classify_sort(lines):
         is_g1 = any(k in edu for k in G1_KEYWORDS)
         is_g2 = any(k in edu for k in G2_KEYWORDS)
 
+        # 分類優先順序：G2(機電) > G1(土木) > G3(其他)
+        # 若同時命中 G1+G2（如「土木+機電」雙學位），優先歸入 G2（機電是核心需求）
         if is_g1 and not is_g2:
             g1.append(block)
         elif is_g2:

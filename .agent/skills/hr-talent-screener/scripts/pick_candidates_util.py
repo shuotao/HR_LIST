@@ -14,6 +14,8 @@ candidates = screen_candidates.parse_candidates(lines)
 results = []
 for c in candidates:
     score, reasons, excluded = screen_candidates.score_candidate(c)
+    # 注意：此工具使用較寬鬆的門檻(15)用於探索性分析，
+    # 正式篩選請使用 screen_candidates.py（門檻=20）
     if not excluded and score >= 15:
         results.append((score, c['name'], c['age'], reasons))
 
