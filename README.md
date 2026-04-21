@@ -15,14 +15,19 @@
   Step 1: /filter ── 篩選：從大池子中挑出值得深入看的人
         │
         ▼
-   HR 到 104 下載那些人的 PDF 完整履歷
+   使用者確認名單（漏選/誤選回饋）
         │
-  Step 2: /merge ─── 合併：PDF → Markdown → 結構化 CSV
+  Step 2: /improve ─ 精煉：疊代學習 + 落差分析 + 問題確認
         │
         ▼
-   HR_Data_Summary.csv
+   HR 到 104 下載入選者的 PDF 完整履歷
         │
-  Step 3: /improve ─ 精煉：用最終選人結果回頭精煉篩選規則
+  Step 3: /merge ─── 合併：PDF → Markdown → 結構化 CSV
+        │
+        ▼
+   HR_Data_Summary.csv（完整履歷細節）
+        │
+  Step 4: /review ── 結案：基於 CSV 全面審閱、落差確認、精煉規則
         │
         ▼
    下一次 /filter 更精準

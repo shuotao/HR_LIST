@@ -57,9 +57,12 @@ EDU_KEYWORDS = [
 
 # 加分條件 N2-N3: 知名公司 (★★★)
 PREMIUM_COMPANIES = [
-    '中鼎', '泰興', '達欣', '潤弘', '大林組', '仲量聯行', 'JLL',
+    '中鼎', '泰興', '達欣', '潤弘', '大林組',
     '台積', '世界先進', '美光', '聯電', '欣興', '長春', '亞東氣體',
     '大陸工程', '日月光', '力晶', '鴻海', '臻鼎', '台灣神隆', '日揮', '恩智浦',
+    # 高科技 EPC / 半導體廠務競業公司
+    '亞翔', '漢唐', '帆宣', '洋基', '信紘科', '擎邦', '同開',
+    '千附', '聖暉', '朋億', '互助營造', '瑞助',
 ]
 
 # 加分條件 N4: 管理職關鍵字 (★★☆)
@@ -77,10 +80,29 @@ MULTISYS_KEYWORDS = [
     '計價', '發包', '水污', '空污', '號誌', '軌道', '捷運',
 ]
 
+# ============================
+# 高科技建廠特化規則 (CTCI High-Tech Fab Specialization)
+# ============================
+
+# N17: 高科技建廠核心關鍵字 (★★★★) — 最高權重
+# 這些字眼直接代表高科技廠房 MEP/Utility 建廠的核心能力
+HIGH_TECH_FAB_KEYWORDS = [
+    '無塵室', '潔淨室', 'Cleanroom', 'FAB', 'UPW', 'WWT',
+    '特氣', '大宗氣體', 'Bulk Gas', '製程排氣', 'Scrubber', 'VOC',
+    '製程冷卻水', 'PCW', 'Hook-up', 'CDA',
+    '化學供應', 'Chemical', '酸鹼', 'Slurry',
+    'EPCK', '試車', 'Commissioning',
+    '高科技廠', '半導體廠', '晶圓廠', '面板廠', 'Utility',
+]
+
+# 傳統重電/設備公司 — 需搭配高科關鍵字才給予全額加分
+TRADITIONAL_CONDITIONAL_COMPANIES = ['中興電工', '士林電機', '東元']
+
+
 # 排除條件
 EXCLUDE_TITLES = [
     '保全', '門市', '餐飲', '銷售', '業務員', '店長', '服務生',
-    '司機', '總幹事', '保險', '房仲', '理財',
+    '司機', '總幹事', '保險', '房仲', '理財', '服務業',
 ]
 
 # E2 排除：希望職稱明確為非工程方向，或為與機電無關的軟硬體/設計
@@ -89,7 +111,8 @@ NON_ENGINEERING_DESIRED = [
     '客服', '文書', '總務', '櫃台', '店員', '專員', '助理',
     '軟體', '後端', '前端', '韌體', '資訊', '網管', 'MIS', 
     '研發', 'CAE', '機構', '熱流', '機器人', '品保', '驗證',
-    'BIM工程師', '內業', '專案業務'
+    'BIM工程師', '內業', '專案業務', '系統整合', '講師', '教育', '室內裝修', '業務', '庶務', '物流', '行銷', '航空',
+    '軟工', '軟體工程師'
 ]
 
 # E4 土建必須具備的 MEP/建廠 關鍵字
@@ -98,22 +121,29 @@ MEP_BUILD_KEYWORDS = [
     '水處理', '管線', 'BIM', '廠務', 'MEP'
 ]
 
-# E5 排除：製程/製造非建廠
+# E5 排除：製程/製造非建廠/機械自動控制
 PROCESS_MFG_KEYWORDS = [
     '製程', '製造', '生產', '設備工程師', '生產線', '電控', '自動化', '研究員',
-    '設備', '蝕刻', '品保', '品管', '裝配', 'Field Service', '客服', '設計工程師', '售後服務'
+    '設備', '蝕刻', '品保', '品管', '裝配', 'Field Service', '客服', '設計工程師', '售後服務',
+    '機械製造', '自動控制', '機械設計', '機構設計', '機械工程師'
 ]
 
 # E6 排除：脫離高度工程專業 (低階勞力/非專業)
 LOW_SKILL_KEYWORDS = [
     '作業員', '操作員', '技術員', '助理', '保養', '維修', '外場', '司機', '理貨', 
     '飯店', '旅館', '專員', '維修工程師', '後勤', '裝配', '組裝', '客服工程師', '倉管', '倉庫', '焊接',
-    '重機械', '引擎', '管輪', '製圖員', '操作', '養護', '外務', '柏文健康', '家福', '健身', '店長'
+    '重機械', '引擎', '管輪', '製圖員', '操作', '養護', '外務', '柏文健康', '家福', '健身', '店長', '修繕',
+    '大廈維護', '大樓維護', '展場', '繪圖員', 'BIM建模員'
 ]
 
 # E7 排除：工安/環安衛人員
 EHS_KEYWORDS = [
     '環安', '職安', '工安', '勞安', '安衛', 'EHS', '安全衛生', '環境工程師'
+]
+
+# E8 絕對封殺：無視任何加分/工程字眼的領域 (軟工、展場、純繪圖等)
+ABSOLUTE_KILL_KEYWORDS = [
+    '軟工', '軟體工程師', '展場', '繪圖員', 'bim建模員', '室內設計'
 ]
 
 SKIP_PREFIXES = ('希望工作地', '居住地', '甄試歷程')
@@ -218,44 +248,19 @@ def score_candidate(c):
     work_and_desired = work_text + '\n' + desired
     name_clean = c['name'].replace(' ', '')
 
-    # --- 使用者直接回饋之強制名單 ---
-    # 這些名單來自歷次批次中使用者明確指定的「漏選」和「誤選」回饋。
-    # 強制納入/排除優先於所有 M/N/E 規則。
-    # 每次 /improve 後應檢視是否需要更新，並同步記錄到 iteration_log.md。
-    USER_INCLUDED_NAMES = [
-        '林振昌', '何建輝', '林傳尉', '曾昊全',
-        '林聖為', '蘇裕評', '楊昀翰', '詹浩澤', '馮梓笙', '王鈺富', '吳岱融',
-        # Batch 7 inclusions
-        '劉恒志', '蔡易霖', '陳彥良', '陳俞勲'
-    ]
-    if any(n in name_clean for n in USER_INCLUDED_NAMES):
-        return 60, ["納入(User): 依據使用者回饋強制列為適任"], False
-        
-    USER_EXCLUDED_NAMES = [
-        '陳建宇', '唐孜穎', '林育志', '林坤益', '徐煒山', '徐仁傑', '蘇冠霖', 
-        '簡登舜', '彭康豪', '劉婷姍', '陳緯朋', '杜新景', '宋柏諺', 
-        '蔡宏彬', '陳宇軒', '盧沛誼', '黃志忠', '江福文', '謝政霓', '蕭家杰', '李仲傑',
-        '王昱翔', '陳莊勝', '馬崇耀', '郭昱宏', '梁秦瑝', '林育男', '方啟名', '馮敬傑', 
-        '吳昭陽', '蕭文賢', '林孟賢', '鄭博文', '劉展驛', '李唯瑞', '李沛瑄', '呂訓亨', 
-        '傅煒傑', '程少伯', '黃聖凱', '林俊丞', '林聖賢', '黃章銘', '饒展誠', '黃國瑞', 
-        '陳冠文', '張擎宇', '沈寧', '張凱迪', '張瀚文', '陳仁宗', '詹子明', '陳俊豪', 
-        '劉耕綸', '江曜樽', '賴育澄', '李玉聖', '林子絹', '曾麗文', '吳少錡',
-        # Batch 6 exclusions
-        '潘聖融', '劉哲宇', '高彬', '羅仕傑', '黃柏勳',
-        # Batch 7 exclusions
-        '蔡政威', '吳霆勳', '范哲輔', '劉家榮', '洪偉舜', '詹益豪',
-        # Batch 8 exclusions
-        '邱鴻霖', '郭安迪', '胡哲華', '黃奕傑', '陳伯鈞', '黃煜恆', '陳鈞凱', '李奕杰', '蔡竣宇', '沈家佑', '謝哲瑋', '沈大鈞', '王志遠', '田婕伶', '鄭建光',
-        # Batch 9 exclusions
-        '余福洋', '賴國銓', '藍士雄',
-        # Batch 10 exclusions
-        '顏浩宇', '洪奕城', '許振楠'
-    ]
-    if any(n in name_clean for n in USER_EXCLUDED_NAMES):
-        return 0, ["排除(User): 依據使用者回饋列為不適任"], True
+    # --- v8.0 架構升級：廢除永久人名黑/白名單 ---
+    # 理由：(1) 候選人會成長轉型，永久黑名單會誤殺  (2) 同名同姓會誤傷  (3) 組織需求會演化
+    # 所有篩選判斷改為「純規則驅動」：M/N/E 條件 + 關鍵字匹配
+    # 歷史回饋的價值已被提煉至 screening_rules.md 的規則與經驗法則中
+    # 歷史人名記錄保存於 iteration_log.md 供人工查閱參考
 
 
     # --- 排除條件 ---
+    # E8: 絕對封殺 (無視其他工程師/機電加分字眼)
+    kill_hits = [kw for kw in ABSOLUTE_KILL_KEYWORDS if kw in work_and_desired.lower()]
+    if kill_hits:
+        return 0, [f"排除(E8): 絕對不適任={','.join(kill_hits[:2])}"], True
+
     # E1: 經歷純粹為保全/門市/餐飲
     if desired:
         exclude_hit = [kw for kw in EXCLUDE_TITLES if kw in desired]
@@ -393,6 +398,69 @@ def score_candidate(c):
     if any(kw in full for kw in ['鋼構', '焊接', 'CO2焊', '鋼結構']):
         score += 3
         reasons.append("N16鋼構/焊接經驗")
+
+    # === 高科技建廠特化加分 (CTCI High-Tech Fab Specialization) ===
+
+    # N17: 高科技建廠核心經驗 (★★★★) — 最高權重
+    # 命中 2 項以上 = +20 (VIP級高科即戰力)
+    # 命中 1 項    = +10 (具備高科基礎)
+    n17_hits = [kw for kw in HIGH_TECH_FAB_KEYWORDS if kw in full]
+    if len(n17_hits) >= 2:
+        score += 20
+        reasons.append(f"N17高科建廠VIP: {','.join(n17_hits[:4])} ({len(n17_hits)}項)")
+    elif len(n17_hits) >= 1:
+        score += 10
+        reasons.append(f"N17高科建廠: {','.join(n17_hits[:3])}")
+
+    # 傳統重電降階: 僅命中傳統公司(中興電工/士林電機/東元)但無任何高科關鍵字
+    # → 扣回 M2 給的 10 分，因為傳統重電(變電站/馬達)≠高科建廠(FAB/Utility)
+    trad_hits = [kw for kw in TRADITIONAL_CONDITIONAL_COMPANIES if kw in full]
+    if trad_hits and not n17_hits:
+        score -= 10
+        reasons.append(f"傳統重電降階: {','.join(trad_hits[:2])}(無高科經驗)")
+
+    # 年資/年齡動態防呆: 40歲以上且無高科建廠經驗也無知名EPC背景
+    # → 表示資深但從未接觸高科廠房，轉型困難度高，扣5分
+    age_num = 0
+    age_match = re.search(r'(\d+)', c['age'])
+    if age_match:
+        age_num = int(age_match.group(1))
+    if age_num >= 40 and not n17_hits:
+        n23_check = [kw for kw in PREMIUM_COMPANIES if kw in full]
+        if not n23_check:
+            score -= 5
+            reasons.append(f"年資防呆: {age_num}歲無高科/知名EPC經驗")
+
+    # D3: 維運型廠務防呆 (扣 15 分)
+    # 如果職稱包含廠務或設備，但履歷中缺乏規劃整合字眼
+    facility_titles = ['廠務', '設備']
+    planning_keywords = ['規劃', '建廠', '新建', '整合', '專案', 'mep', '統包']
+    
+    is_facility = any(k in desired for k in facility_titles) or any(k in first_work for k in facility_titles)
+    has_planning = any(k in work_and_desired for k in planning_keywords)
+    
+    if is_facility and not has_planning:
+        score -= 15
+        reasons.append("D3廠務防呆: 偏維護缺乏規劃整合 (-15)")
+
+    # D4: 製造端/測試端降階 (扣 15 分)
+    # 針對測試、組裝、產線、加工、車廠等非建廠製造屬性
+    mfg_penalty_keywords = ['測試', '產線', '組裝', '加工', '車廠', 'plc', 'smt', 'cnc']
+    if any(k in work_and_desired.lower() for k in mfg_penalty_keywords):
+        score -= 15
+        reasons.append("D4製造降階: 偏向製造/測試端 (-15)")
+
+    # D5: 採購/內業防呆 (扣 15 分)
+    # 如果職稱包含採購，但履歷中缺乏實質機電工程字眼
+    procurement_titles = ['採購']
+    mep_procurement_keywords = ['機電', '空調', '消防', '電力', '管線', '發包', 'mep']
+    
+    is_procurement = any(k in work_and_desired for k in procurement_titles)
+    has_mep_procurement = any(k in work_and_desired.lower() for k in mep_procurement_keywords)
+    
+    if is_procurement and not has_mep_procurement:
+        score -= 15
+        reasons.append("D5採購防呆: 純內業缺乏機電發包經驗 (-15)")
 
     return score, reasons, False
 

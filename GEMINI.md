@@ -37,14 +37,19 @@ ANALYSIS.md（上游：大池子，數百人摘要）
 Step 1: /filter — 篩選：從大池子中挑出值得深入看的人
     │
     ▼
-HR 根據篩選結果，到 104 下載那些人的 PDF 完整履歷
+使用者確認名單（漏選/誤選回饋）
     │
     ▼
-Step 2: /merge — 合併：把 PDF 轉成結構化 CSV（HR_Data_Summary.csv）
+Step 2: /improve — 精煉：疊代學習 + 落差分析 + 問題確認
     │
     ▼
-Step 3: /improve — 精煉：用 CSV（已確認的最終選人）回頭精煉篩選規則
-                          讓下一次 /filter 更精準
+HR 根據最終名單，到 104 下載那些人的 PDF 完整履歷
+    │
+    ▼
+Step 3: /merge — 合併：把 PDF 轉成結構化 CSV（HR_Data_Summary.csv）
+    │
+    ▼
+Step 4: /review — 結案：基於 CSV 全面審閱、落差確認、精煉規則
 ```
 
 > **關鍵認知：ANALYSIS.md 是上游（粗篩來源），PDF 是下游（精選結果）。**
