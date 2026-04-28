@@ -110,22 +110,18 @@ NON_ENGINEERING_DESIRED = [
     '會計', '秘書', '行政', '財務', '人資', '人事', '人力資源',
     '客服', '文書', '總務', '櫃台', '店員', '專員', '助理',
     '軟體', '後端', '前端', '韌體', '資訊', '網管', 'MIS', 
-    '研發', 'CAE', '機構', '熱流', '機器人', '品保', '驗證',
-    'BIM工程師', '內業', '專案業務', '系統整合', '講師', '教育', '室內裝修', '業務', '庶務', '物流', '行銷', '航空',
-    '軟工', '軟體工程師'
+    '研發', '研究', 'CAE', '機構', '熱流', '機器人', '品保', '驗證',
+    'BIM工程師', '內業', '專案業務', '系統整合', '講師', '教育', '室內裝修', '室內設計', '建築設計', '業務', '庶務', '物流', '行銷', '航空',
+    '軟工', '軟體工程師', '土開', '土地開發', '研究類別',
+    '實驗室', '校正', '稽核', '採購', '發包', '產品', 'AIOT'
 ]
 
-# E4 土建必須具備的 MEP/建廠 關鍵字
-MEP_BUILD_KEYWORDS = [
-    '建廠', '擴廠', '機電', '空調', '消防', '電力', '給排水', '無塵室', 
-    '水處理', '管線', 'BIM', '廠務', 'MEP'
-]
-
-# E5 排除：製程/製造非建廠/機械自動控制
-PROCESS_MFG_KEYWORDS = [
-    '製程', '製造', '生產', '設備工程師', '生產線', '電控', '自動化', '研究員',
-    '設備', '蝕刻', '品保', '品管', '裝配', 'Field Service', '客服', '設計工程師', '售後服務',
-    '機械製造', '自動控制', '機械設計', '機構設計', '機械工程師'
+# E5 排除：製程/製造/非建廠端
+NON_CONSTRUCTION_MANUFACTURING = [
+    '製程', '製造', '生產', '設備工程師', '技術工程師', '生產線', '品保', '機械製造',
+    '自動控制', '設計', '機構設計', '工程師', '操作', 'PLC', '電控', 'Field Service', 
+    '客服', '設計工程師', '售後服務', 'AIOT', '產品', '韌體', 'FAE', 'fae', '應用工程師',
+    '研發', 'RD', 'R&D', 'rd', '光機', '光電', '微影', '顯示', '開發', '設備維護', '運轉維護', '保養', '設備保養'
 ]
 
 # E6 排除：脫離高度工程專業 (低階勞力/非專業)
@@ -133,7 +129,8 @@ LOW_SKILL_KEYWORDS = [
     '作業員', '操作員', '技術員', '助理', '保養', '維修', '外場', '司機', '理貨', 
     '飯店', '旅館', '專員', '維修工程師', '後勤', '裝配', '組裝', '客服工程師', '倉管', '倉庫', '焊接',
     '重機械', '引擎', '管輪', '製圖員', '操作', '養護', '外務', '柏文健康', '家福', '健身', '店長', '修繕',
-    '大廈維護', '大樓維護', '展場', '繪圖員', 'BIM建模員'
+    '大廈維護', '大樓維護', '大廈管理', '駐點', '展場', '繪圖員', 'BIM建模員', '總務', '後端', '研究類別', '研究員',
+    '實習生', '學徒', '工讀生', '中控', '夜班', '服務人員', '營業員', '助手', '檢修', '技工', '半技', '粗工', '物業', '機械技術'
 ]
 
 # E7 排除：工安/環安衛人員
@@ -248,13 +245,6 @@ def score_candidate(c):
     work_and_desired = work_text + '\n' + desired
     name_clean = c['name'].replace(' ', '')
 
-    # --- v8.0 架構升級：廢除永久人名黑/白名單 ---
-    # 理由：(1) 候選人會成長轉型，永久黑名單會誤殺  (2) 同名同姓會誤傷  (3) 組織需求會演化
-    # 所有篩選判斷改為「純規則驅動」：M/N/E 條件 + 關鍵字匹配
-    # 歷史回饋的價值已被提煉至 screening_rules.md 的規則與經驗法則中
-    # 歷史人名記錄保存於 iteration_log.md 供人工查閱參考
-
-
     # --- 排除條件 ---
     # E8: 絕對封殺 (無視其他工程師/機電加分字眼)
     kill_hits = [kw for kw in ABSOLUTE_KILL_KEYWORDS if kw in work_and_desired.lower()]
@@ -268,45 +258,105 @@ def score_candidate(c):
         if exclude_hit and not has_eng:
             return 0, [f"排除(E1): 希望職稱={desired[:30]}"], True
 
-    # E2: 希望職稱包含非工程關鍵字且無任何核心領域關鍵字
+    # E2: 希望職稱包含非工程關鍵字
     if desired:
-        non_eng_hit = [kw for kw in NON_ENGINEERING_DESIRED if kw in desired]
-        has_core = any(kw in desired for kw in CORE_TITLE_KEYWORDS)
-        has_eng_generic = any(kw in desired for kw in ['工程', '技術', '機電', '廠務', '監造'])
-        if non_eng_hit and not has_core and not has_eng_generic:
+        if any(kw in desired for kw in NON_ENGINEERING_DESIRED):
             return 0, [f"排除(E2): 希望職稱非工程={desired[:30]}"], True
 
     # E3: 脫離高度工程專業（低階維修/作業員）
-    # 邏輯：若希望職稱或近期工作命中 LOW_SKILL_KEYWORDS → 預判為低階
-    #       但若同時有管理/工程師頭銜（工程師/主任/經理等）→ 救回（不排除）
-    #       特例：「維修工程師」雖含「工程師」，但仍視為低階，不救回
     low_skill_hits = [kw for kw in LOW_SKILL_KEYWORDS if kw in desired or kw in first_work]
     has_mgmt_or_eng = any(kw in desired + first_work for kw in ['工程師', '主任', '經理', '副理', '課長', '專案', '機電', '氣體'])
-    if '維修工程師' in desired + first_work:
-        has_mgmt_or_eng = False  # 特例：維修工程師不算工程專業
+    
+    # 特例防呆：這些職稱就算有工程師或機電字眼，也不能被救回
+    unsavable_hits = [kw for kw in ['維修工程師', '技術工程師', '助理', '實習', '學徒', '中控', '夜班', '工讀', '助手', '專員', '駐點', '倉管', '倉庫', '器材', '物料', '總務', '行政', '人事', '檢修', '技工', '半技', '粗工', '保全', '駐衛警', '勤務', '物業', '機械技術'] if kw in desired + first_work]
+    if unsavable_hits:
+        has_mgmt_or_eng = False
 
     if low_skill_hits and not has_mgmt_or_eng:
         return 0, [f"排除(E3): 脫離工程專業={','.join(low_skill_hits[:2])}"], True
 
-    # E4: 純土建人員無建廠/廠房營造經驗
-    is_pure_civil = (c['group'] == 'G1_土木建築') or any(kw in desired for kw in ['建築', '營造工程師', '土木'])
+    # E4: 純土建/營造人員無建廠/廠房營造經驗
+    is_pure_civil = (c['group'] == 'G1_土木建築') or any(kw in desired + work_text for kw in ['建築', '營建', '土木', '營造'])
     if is_pure_civil:
         has_factory = any(kw in work_and_desired for kw in ['建廠', '擴廠', '廠務', '無塵室', '統包', 'EPC', '科技廠', '半導體', '面板', '帆宣', '漢唐', '亞翔', '特氣', '管路'])
-        has_mep_role = any(kw in desired for kw in ['機電', 'BIM', 'MEP'])
+        has_mep_role = any(kw in desired + work_text for kw in ['機電', 'BIM', 'MEP', '空調', '消防', '電力', '水處理', '水電'])
         if not (has_factory or has_mep_role):
-            return 0, ["排除(E4): 土建無建廠經驗"], True
+            return 0, ["排除(E4): 土建/營造無機電建廠經驗"], True
 
-    # E5: 機電/第三區塊人員若屬製程/製造/生產領域
+    # E5: 機電/第三區塊人員若屬製程/製造/非建廠類
     if c['group'] in ('G2_機電相關', 'G3_其他'):
-        proc_hits = [kw for kw in PROCESS_MFG_KEYWORDS if kw in work_and_desired]
-        has_facility_mep = any(kw in work_and_desired for kw in ['廠務', '建廠', '擴廠', '空調', '消防', '水處理', '無塵室', '特氣', '營造', '建設', '氣體', '中鼎', '機電', '配電', '電力', '水電'])
-        if proc_hits and not has_facility_mep:
-            return 0, [f"排除(E5): 偏向製程/製造={','.join(proc_hits[:2])}"], True
+        if any(kw in work_and_desired for kw in NON_CONSTRUCTION_MANUFACTURING):
+            has_facility_mep = any(kw in work_and_desired for kw in ['廠務', '建廠', '擴廠', '空調', '消防', '水處理', '無塵室', '特氣', '營造', '建設', '氣體', '中鼎', '機電', '配電', '電力', '水電'])
+            if not has_facility_mep:
+                return 0, ["排除(E5): 偏向製程/製造/非建廠屬性"], True
 
     # E7: 工安/環安衛人員（非機電工程/土建）
     ehs_hits = [kw for kw in EHS_KEYWORDS if kw in desired or kw in first_work]
     if ehs_hits:
         return 0, [f"排除(E7): 工安/環安衛={','.join(ehs_hits[:2])}"], True
+
+    # E9: 偏向住宅工程/純建築無建廠
+    residential_hits = [kw for kw in ['住宅', '住宅工程', '透天', '別墅'] if kw in work_and_desired]
+    if residential_hits:
+        has_factory = any(kw in work_and_desired for kw in ['建廠', '擴廠', '廠務', '無塵室', '統包', '科技廠', '半導體'])
+        if not has_factory:
+            return 0, [f"排除(E9): 偏向住宅工程={','.join(residential_hits[:2])}"], True
+
+    # E10: 純水電勞務排除 (針對履歷單薄之水電工務)
+    # 修正：不看希望職稱，必須真實近期經歷具備工程師/專案頭銜
+    plumber_only = '水電' in desired + first_work and not any(kw in first_work for kw in ['工程師', '主任', '副理', '經理', '專案', '機電', '廠務'])
+    has_thick = any(k in work_and_desired for k in ['規劃', '建廠', '新建', '擴廠', '專案', '統包', '無塵室', '廠務', '發包', '圖面', '監造'])
+    if plumber_only and not has_thick:
+        return 0, ["排除(E10): 履歷單薄之純水電/勞務工作"], True
+
+    # E11: 純採購/發包/稽核排除 (無機電/建廠實務)
+    procurement_only = any(kw in desired + first_work for kw in ['採購', '發包', '稽核', '能源管理'])
+    if procurement_only:
+        has_mep_role = any(kw in desired + work_text for kw in ['機電', '空調', '消防', '電力', '無塵室', '廠務', '建廠', '水處理'])
+        if not has_mep_role:
+            return 0, ["排除(E11): 純採購/企劃無機電實務"], True
+
+    # E17: 純科技研發/軟體/業務/光電人員排除
+    fatal_rd_software_hits = [kw for kw in ['軟硬體', '軟體', 'SQA', '演算法', 'BIOS', 'IC設計', '晶片', '前端', '後端', '全端', 'App開發', '業務', '光電', '研發', 'RD'] if kw in work_and_desired]
+    if fatal_rd_software_hits:
+        return 0, ["排除(E17): 純軟體/研發/業務人員"], True
+
+    # 特例：楊遠志、邱弘瀚、黃新益 (依使用者 Batch 29 回饋直接封殺)
+    if c['name'] in ['楊遠志', '邱弘瀚', '黃新益']:
+        return 0, ["排除: 用戶指定無明確建廠/經歷單薄/非工程專精"], True
+
+    # E12: 大樓物業/商場維護防呆
+    property_hits = [kw for kw in ['公寓大廈', '物業', '保全', '百貨', '商場', '量販', '社區管理', '管委會', '京站'] if kw in work_and_desired]
+    if property_hits:
+        has_factory = any(kw in work_and_desired for kw in ['建廠', '擴廠', '廠務', '無塵室', '統包', '科技廠', '半導體'])
+        if not has_factory:
+            return 0, [f"排除(E12): 大樓物業/商場維護={','.join(property_hits[:2])}"], True
+
+    # E13: 服務業轉型且工程經歷單薄防呆
+    has_thick_work = any(k in work_text for k in ['規劃', '建廠', '新建', '擴廠', '專案', '統包', '無塵室', '廠務', '發包', '圖面', '監造'])
+    non_eng_bg_hits = sum(1 for line in c['work_lines'] if any(kw in line for kw in ['餐廳', '門市', '吧台', '服務人員', '美容', '保全', '店長', '理貨', '餐飲']))
+    eng_job_hits = sum(1 for line in c['work_lines'] if any(kw in line for kw in ['工程', '機電', '廠務', '水電', '空調', '消防']))
+    if non_eng_bg_hits >= 2 and eng_job_hits <= 1 and not has_thick_work:
+        return 0, ["排除(E13): 服務業轉型且工程經歷單薄"], True
+
+    # E14: 非專業科系且無厚度經歷防呆
+    non_eng_edu = any(kw in c['edu'] for kw in ['設計', '餐飲', '美容', '觀光', '語文', '幼保', '休閒', '保健', '食品'])
+    if non_eng_edu and not has_thick_work:
+        return 0, ["排除(E14): 非專業科系背景且工程履歷單薄"], True
+
+    # E15: 缺乏核心機電實務且經歷混雜防呆
+    core_mep_hits = [kw for kw in ['空調', '消防', '水處理', '管線', 'BIM', 'MEP', '廠務', '水電', '無塵室', '建廠', '統包'] if kw in work_and_desired]
+    if not core_mep_hits:
+        if any(kw in work_text for kw in ['操作員', '技術人員', '服務人員', '門市', '餐飲', '保全', '總務', '作業員', '理貨', '美容']):
+            return 0, ["排除(E15): 缺乏核心機電實務且經歷混雜"], True
+
+    # E16: 機電整合/自動控制/航太等非廠房設施防呆
+    automation_hits = [kw for kw in ['機電整合', '自動化設備', '自動控制', 'PLC', '電控', '航太', '航空', ' cnc', 'CNC'] if kw in work_and_desired]
+    if automation_hits:
+        # 必須要有廠務或建廠相關的明確設施關鍵字才能豁免
+        has_real_facility = any(kw in work_and_desired for kw in ['廠務', '建廠', '無塵室', '空調', '水電', '消防', '水處理'])
+        if not has_real_facility:
+            return 0, [f"排除(E16): 偏向自動化/製造/航太({','.join(automation_hits[:2])})"], True
 
     # --- 必要條件 M1: 職稱（分層計分）---
     # 核心關鍵字（機電/廠務/監造等）命中 = +10分，代表明確的領域對口
@@ -461,6 +511,14 @@ def score_candidate(c):
     if is_procurement and not has_mep_procurement:
         score -= 15
         reasons.append("D5採購防呆: 純內業缺乏機電發包經驗 (-15)")
+
+    # D6: 履歷單薄防呆 (依照 Batch 22 回饋改為不強制扣分淘汰，作為降級觀察)
+    # 如果缺乏具體機電工程或建廠細節，且並未在知名公司任職
+    thick_keywords = ['規劃', '建廠', '新建', '擴廠', '專案', '統包', '無塵室', '廠務', '發包', '圖面', '監造']
+    has_thick = any(k in work_and_desired for k in thick_keywords)
+    if not has_thick and len(n23_hits) == 0:
+        # score -= 15  # 取消嚴格扣分
+        reasons.append("D6履歷單薄(待PDF判定降級)")
 
     return score, reasons, False
 

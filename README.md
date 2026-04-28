@@ -25,10 +25,13 @@
   Step 3: /merge ─── 合併：PDF → Markdown → 結構化 CSV
         │
         ▼
-   HR_Data_Summary.csv（完整履歷細節）
+   HR_Data_Summary.csv（完整履歷細節，9 欄）
         │
-  Step 4: /review ── 結案：基於 CSV 全面審閱、落差確認、精煉規則
-        │
+  Step 4: /review ── 結案：基於 CSV 全面審閱 + 反饋精煉規則
+        │              → CSV 新增「審閱結果建議」+「審閱排除理由簡述」（11 欄）
+        │              → 僅在 CSV 內標註，不搬移任何 PDF/MD 檔案
+        │              → 逐筆驗證 CSV 序號 ↔ PDF 檔名一致性
+        │              → 審閱發現的漏網之魚反饋回 screening_rules.md
         ▼
    下一次 /filter 更精準
 ```
@@ -50,47 +53,90 @@ python scripts/screen_candidates.py ANALYSIS.md     # 評分篩選
 2. 以代碼為唯一鍵去除重複候選人
 3. 依學歷科系分三區塊重新排序（土木建築 / 機電相關 / 其他）
 
-**篩選規則：**
+**篩選規則（v8.13）：**
 
 | 類型 | 說明 |
 |------|------|
 | 必要條件 (M1-M3) | 職稱含機電/廠務/監造等、有 EPC/營造/半導體經歷、3年以上年資 |
-| 加分條件 (N1-N16) | 學歷對口、知名企業、管理職、多系統覆蓋、品管、能源工程等 |
-| 排除條件 (E1-E3) | 純保全/門市/餐飲且無轉型跡象 |
+| 加分條件 (N1-N17) | 學歷對口、知名企業、管理職、多系統覆蓋、品管、能源工程、高科技建廠核心等 |
+| 排除條件 (E1-E17) | 保全/門市/餐飲、非工程職稱、年資不足、純土建、製程製造、低階維修、環安衛、軟體/研發/光電、公寓物業、雜魚履歷、自動化/航太防呆等 |
+| 動態調整 (D1-D5) | 傳統重電降階、年資防呆、廠務維運防呆、製造端降階、採購內業防呆 |
+
+完整規則定義：`.agent/skills/hr-talent-screener/references/screening_rules.md`
 
 ---
 
-## Step 2：合併（/merge）
+## Step 2：精煉（/improve）
+
+使用者確認 `/filter` 結果後，針對漏選/誤選回饋進行落差分析，更新篩選規則與程式碼。
+
+**更新目標：**
+- `screening_rules.md` — 新增/修正 M/N/E/D 條件與關鍵字
+- `screen_candidates.py` — 同步程式碼中的關鍵字與評分邏輯
+- `iteration_log.md` — 追加本批次日誌
+- `historical_selections.csv` — 追加歷史選人紀錄
+
+**疊代原則：**
+- 每位被排除的候選人必須歸因到具體的規則缺口
+- 新增規則必須同時更新 `screening_rules.md`（文件）與 `screen_candidates.py`（程式碼）
+- 修改後立即重跑 `/filter` 驗證排除效果
+
+---
+
+## Step 3：合併（/merge）
 
 將 HR 從 104 下載的個別候選人 PDF 履歷，轉為結構化 CSV。
 
 **執行方式：**
 ```bash
 python scripts/convert_pdfs.py        # PDF → Markdown
-python scripts/extract_hr_data.py     # Markdown → CSV
+python scripts/extract_hr_data.py     # Markdown → CSV（含自動防幻覺抽檢 + 序號編排）
 ```
 
-**擷取欄位：** 姓名、年紀、語文能力、學歷、近期工作、工作內容、總年資、前二次任職公司
+**擷取欄位（9 欄）：** 序號、姓名、年紀、語文能力、學歷、近期工作、近期工作內容、總年資、前二次任職公司
 
 **範例結果（個資已模糊化）：**
 
-| 姓名 | 年紀 | 語文能力 | 學歷 | 近期工作 | 總年資 | 前二次任職公司 |
+| 序號 | 姓名 | 年紀 | 學歷 | 近期工作 | 總年資 | 前二次任職公司 |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 候選人 A | 42 | 英文(略懂)、台語 | 大學畢業 ○○學院 營建科技 | 儀控工程師 | 10 | ○○科技、××文教 |
-| 候選人 B | 31 | 英文(中等)、台語 | 碩士畢業 ○○科大 冷凍空調 | 空調工程師 | 4 | ○○空調、××綠能 |
-| 候選人 C | 46 | 英文(略懂)、台語 | 國中畢業 | 機電主任 | 15 | ○○事業、××建設 |
+| 001 | 候選人 A | 42 | 大學畢業 ○○學院 營建科技 | 儀控工程師 | 10 | ○○科技、××文教 |
+| 002 | 候選人 B | 31 | 碩士畢業 ○○科大 冷凍空調 | 空調工程師 | 4 | ○○空調、××綠能 |
 
 ---
 
-## Step 3：精煉（/improve）
+## Step 4：結案審閱（/review）
 
-用 `HR_Data_Summary.csv`（已確認的最終選人結果）或使用者的漏選/誤選回饋，回頭精煉篩選規則，讓下一次 `/filter` 更精準。
+基於 CSV 全面審閱所有候選人，標註分類結果並反饋精煉規則。
 
-**更新目標：**
-- `screening_rules.md` — 新增/修正 M/N/E 條件與關鍵字
-- `screen_candidates.py` — 同步程式碼中的關鍵字與評分邏輯
-- `iteration_log.md` — 追加本批次日誌
-- `historical_selections.csv` — 追加歷史選人紀錄
+**處理流程：**
+1. 地毯式逐人掃描 CSV 中每位候選人的完整履歷資訊
+2. 依據建廠/廠務/機電相關程度，將每人標記為：正式 / 排除 / 降級 / 儲備
+3. CSV 新增「審閱結果建議」欄（總年資之前）+「審閱排除理由簡述」欄（末欄），擴充為 11 欄
+4. **僅在 CSV 內標註，不搬移任何 PDF/MD 檔案，不建立子資料夾**
+5. **強制驗證**：逐筆比對 CSV 序號與根目錄 PDF 檔名 `{序號}_{姓名}.pdf`，全部一致才可結案
+
+**反饋迴路（關鍵！）：**
+- 審閱中發現的「漏網之魚」（應在 /filter 階段就被排除但未被攔截的人），必須回頭分析其特徵
+- 將新發現的排除特徵更新至 `screening_rules.md` 與 `screen_candidates.py`
+- 確保下一次 `/filter` 能自動攔截同類型候選人，形成閉環精煉
+
+---
+
+## CSV 欄位定義（11 欄最終版）
+
+| 欄位 | 說明 |
+|------|------|
+| 序號 | 三位數編號（001, 002...），依姓名筆劃排序 |
+| 姓名 | 候選人全名 |
+| 年紀 | 數字 |
+| 語文能力 | 語言種類與程度 |
+| 學歷 | 完整學歷字串 |
+| 近期工作 | 公司名稱 + 職稱 |
+| 近期工作內容 | 最近一份工作的完整敘述 |
+| **審閱結果建議** | 正式 / 排除 / 降級 / 儲備（/review 後新增） |
+| 總年資 | 數字 |
+| 前二次任職公司 | 扣除最新一家後的近兩次經歷 |
+| **審閱排除理由簡述** | 非正式候選人的排除/降級原因（/review 後新增） |
 
 ---
 
@@ -99,10 +145,12 @@ python scripts/extract_hr_data.py     # Markdown → CSV
 | 文件 | 位置 | 用途 |
 |------|------|------|
 | 人才候選計畫.md | 專案根目錄 | 基於歷史選人反推的篩選規則與企業畫像 |
-| screening_rules.md | hr-talent-screener/references/ | 跨批次永久有效的純規則手冊 |
-| iteration_log.md | hr-talent-screener/references/ | 疊代日誌（每批次追加，不刪除） |
-| clear_RULE.md | hr-talent-screener/references/ | 三階段清洗規則定義 |
-| GEMINI.md | 專案根目錄 | Agent 執行守則 |
+| screening_rules.md | .agent/skills/hr-talent-screener/references/ | 跨批次永久有效的純規則手冊（M/N/E/D） |
+| iteration_log.md | .agent/skills/hr-talent-screener/references/ | 疊代日誌（每批次追加，不刪除） |
+| historical_selections.csv | .agent/skills/hr-talent-screener/references/ | 歷史選人紀錄（跨批次累積） |
+| clear_RULE.md | .agent/skills/hr-talent-screener/references/ | 三階段清洗規則定義 |
+| CLAUDE.md | 專案根目錄 | **專案唯一憲法**（Agent 執行守則，所有規則的單一權威來源） |
+| GEMINI.md | 專案根目錄 | 單行指標，指向 CLAUDE.md（嚴禁追加內容） |
 
 ---
 
@@ -110,4 +158,6 @@ python scripts/extract_hr_data.py     # Markdown → CSV
 
 - **個資保護**：本工具建議於企業內網環境使用。所有範例人名須模糊化處理。
 - **編碼規範**：CSV 採 `utf-8-sig` 編碼，可直接以 Excel 開啟。
-- **Python 環境**：使用專案指定的綠色版 Python，不依賴系統全域安裝。
+- **Python 環境**：使用專案指定的綠色版 `python-3.14.2-embed-amd64`，不依賴系統全域安裝。
+- **檔案管理**：所有 PDF/MD 一律保留在根目錄，分類結果僅記錄於 CSV 欄位。
+- **唯一腳本原則**：僅使用 `.agent/skills/*/scripts/` 內的官方腳本，嚴禁自建臨時腳本。
