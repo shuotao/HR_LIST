@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HRMD 履歷健康檢查 | Resume Health Check</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>HRMD 履歷健康檢查</h1>
+            <p class="subtitle">Resume Health Check System</p>
+        </header>
+
+        <section class="job-info">
+            <h2>目標職缺</h2>
+            <div class="job-card">
+                <div class="job-header">
+                    <span class="job-tag">BIM主任</span>
+                    <span class="job-company">中鼎集團 CTCI</span>
+                </div>
+                <div class="job-dept">高科技設施系統部 High-Tech Facility Systems</div>
+                <div class="job-details">
+                    <div class="detail-item">
+                        <span class="label">薪資範圍</span>
+                        <span class="value">NT$ 33,000 ~ 96,800 / 月</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">工作地點</span>
+                        <span class="value">台北市士林區</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">學歷要求</span>
+                        <span class="value">專科以上 (工程/化學相關)</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">經驗要求</span>
+                        <span class="value">1年以上 BIM 專案經驗</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">語文要求</span>
+                        <span class="value">TOEIC 500+ 或同等英語能力</span>
+                    </div>
+                </div>
+                <div class="job-desc-toggle" onclick="toggleJobDesc()">
+                    <span id="toggle-text">展開完整職務說明</span>
+                    <span id="toggle-arrow">&#9660;</span>
+                </div>
+                <div class="job-full-desc" id="job-full-desc">
+                    <p><strong>職務說明：</strong></p>
+                    <ol>
+                        <li>於工程專案各階段，協調與整合模型和圖紙，使BIM模型從概念設計到施工、竣工移交過程均符合合約要求。</li>
+                        <li>使BIM技術的應用、標準設定、建模作業流程落實於專案工程上。</li>
+                        <li>協助團隊針對BIM模型可視化應用項目，輔助設計提案的決策建議。</li>
+                        <li>維護模型資料庫，並確實將資料統整於CDE系統環境。</li>
+                        <li>協調和管理BIM模型使其符合業主設定之交付時程，並確保模型的品質。</li>
+                    </ol>
+                </div>
+            </div>
+        </section>
+
+        <section class="upload-section">
+            <h2>上傳您的履歷</h2>
+            <p class="upload-hint">支援 104 人力銀行下載的 PDF 履歷 (上限 10MB)</p>
+            <div class="drop-zone" id="drop-zone">
+                <div class="drop-icon">&#128196;</div>
+                <p class="drop-text">拖曳 PDF 檔案至此處</p>
+                <p class="drop-or">或</p>
+                <label class="file-btn">
+                    選擇檔案
+                    <input type="file" id="file-input" accept=".pdf" hidden>
+                </label>
+            </div>
+            <div class="file-info" id="file-info" style="display:none;">
+                <span class="file-name" id="file-name"></span>
+                <button class="file-remove" id="file-remove" title="移除">&#10005;</button>
+            </div>
+            <button class="analyze-btn" id="analyze-btn" disabled>開始健檢分析</button>
+        </section>
+
+        <section class="loading" id="loading" style="display:none;">
+            <div class="spinner"></div>
+            <p>正在分析您的履歷，請稍候...</p>
+            <p class="loading-hint">首次使用可能需要 15-30 秒 (伺服器啟動中)</p>
+        </section>
+
+        <section class="error-section" id="error-section" style="display:none;">
+            <div class="error-card">
+                <div class="error-icon">&#9888;</div>
+                <p class="error-msg" id="error-msg"></p>
+                <button class="retry-btn" onclick="resetUI()">重新上傳</button>
+            </div>
+        </section>
+
+        <section class="results" id="results" style="display:none;">
+            <h2>分析結果</h2>
+
+            <div class="candidate-card" id="candidate-card">
+                <h3 id="result-name"></h3>
+                <div class="candidate-meta">
+                    <span id="result-age"></span>
+                    <span id="result-edu"></span>
+                    <span id="result-seniority"></span>
+                </div>
+                <div class="candidate-details">
+                    <div class="detail-row">
+                        <span class="label">語文能力</span>
+                        <span class="value" id="result-lang"></span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="label">近期工作</span>
+                        <span class="value" id="result-work"></span>
+                    </div>
+                    <div class="detail-row" id="result-desc-row">
+                        <span class="label">工作內容</span>
+                        <span class="value" id="result-desc"></span>
+                    </div>
+                    <div class="detail-row" id="result-prev-row">
+                        <span class="label">前任公司</span>
+                        <span class="value" id="result-prev"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="score-cards">
+                <div class="score-card" id="general-card">
+                    <h3>通用工程人才評分</h3>
+                    <div class="gauge-container">
+                        <div class="gauge" id="general-gauge">
+                            <span class="gauge-value" id="general-value"></span>
+                        </div>
+                        <div class="gauge-label" id="general-label"></div>
+                    </div>
+                    <div class="score-reasons" id="general-reasons"></div>
+                </div>
+
+                <div class="score-card" id="bim-card">
+                    <h3>BIM 主任職缺適配度</h3>
+                    <div class="gauge-container">
+                        <div class="gauge" id="bim-gauge">
+                            <span class="gauge-value" id="bim-value"></span>
+                        </div>
+                        <div class="gauge-label" id="bim-label"></div>
+                    </div>
+                    <div class="bim-breakdown" id="bim-breakdown"></div>
+                    <div class="recommendation" id="bim-recommendation"></div>
+                </div>
+            </div>
+
+            <button class="retry-btn" onclick="resetUI()">上傳其他履歷</button>
+        </section>
+
+        <footer>
+            <p>HRMD Resume Health Check &copy; 2026 | Powered by CTCI Screening Engine</p>
+            <p class="footer-note">本系統僅供履歷參考分析，不代表正式錄取結果</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
