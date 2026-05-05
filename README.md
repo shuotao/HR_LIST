@@ -2,6 +2,8 @@
 
 專為人資主管與徵才團隊設計：從 104 人力銀行的大量候選人摘要中篩選出目標人選，再將其完整 PDF 履歷轉為結構化資料，並透過疊代學習持續提升篩選精準度。
 
+**從 v9.0 起支援多角色 overlay**：同一條 4 步驟流程可透過 `--role` 參數套用 `default`（廠務/一般 MEP）/ `mep-design`（MEP 設計）/ `space-manager`（空間管理）三種角色規則。詳見 [docs/ROLES.md](docs/ROLES.md) 與下方「角色與哲學」章節。
+
 ---
 
 ## 業務流程
@@ -10,43 +12,80 @@
 104 系統搜尋結果（數百人摘要）
         │
         ▼
-   ANALYSIS.md
+   ANALYSIS.md（角色 overlay 透過 --role 切換）
         │
-  Step 1: /filter ── 篩選：從大池子中挑出值得深入看的人
+  Step 1: /filter [--role=<role>] ── 篩選：從大池子中挑出值得深入看的人
         │
         ▼
    使用者確認名單（漏選/誤選回饋）
         │
-  Step 2: /improve ─ 精煉：疊代學習 + 落差分析 + 問題確認
+  Step 2: /improve [--role=<role>] ─ 精煉：疊代學習 + 落差分析 + 問題確認
         │
         ▼
    HR 到 104 下載入選者的 PDF 完整履歷
         │
-  Step 3: /merge ─── 合併：PDF → Markdown → 結構化 CSV
+  Step 3: /merge ─── 合併：PDF → Markdown → 結構化 CSV（角色無關）
         │
         ▼
    HR_Data_Summary.csv（完整履歷細節，9 欄）
         │
-  Step 4: /review ── 結案：基於 CSV 全面審閱 + 反饋精煉規則
+  Step 4: /review [--role=<role>] ── 結案：基於 CSV 全面審閱 + 反饋精煉規則
         │              → CSV 新增「審閱結果建議」+「審閱排除理由簡述」（11 欄）
         │              → 僅在 CSV 內標註，不搬移任何 PDF/MD 檔案
         │              → 逐筆驗證 CSV 序號 ↔ PDF 檔名一致性
-        │              → 審閱發現的漏網之魚反饋回 screening_rules.md
+        │              → 審閱發現的漏網之魚反饋回對應 role overlay
         ▼
    下一次 /filter 更精準
 ```
+
+**支援的角色（`--role` 值）：**
+- `default`（不帶 `--role`）：廠務 / 一般 MEP 工程師（既有 v8.13 行為）
+- `mep-design`：MEP 設計工程師（用 BIM 做深，單系統設計）
+- `space-manager`：空間管理工程師（用 BIM 做廣，跨系統整合 + 法規理解）
+
+---
+
+## 角色與哲學（v9.0 新增）
+
+> **核心觀點**：「BIM 是外衣，工程深度才是骨幹。BIM 技術會逐漸被組織變成 MCP 的基礎使用工具。」
+
+中鼎工程系統部的人才需求不是「找 BIM 工程師」這麼簡單。**同部門有多個互相支援的角色，BIM 是組織級的基礎工具，不是某職務的專業**：
+
+| 角色 | 用 BIM 做什麼 | 風格 |
+|------|---------------|------|
+| **MEP（機電設計）** | 用 BIM 做機電系統設計 | **做深** — 單系統的設計品質 |
+| **Space Manager（空間管理）** | 透過模型做空間整合、規範理解 | **做廣** — 跨系統的整合協調 |
+| **廠務 / 一般 MEP**（既有） | 廠務、施工、維運、監造 | （既有職缺主軸） |
+
+**這就是為什麼採用「同系統 overlay 分流」、不 fork 成獨立 pipeline**——保留同部門知識交流的架構哲學，避免 BIM 被切成獨立物種。
+
+每個角色的詳細規格在 `.agent/skills/hr-talent-screener/references/role_overlays/<role>.md`。HR 視角的角色說明在 `docs/ROLES.md`。
 
 ---
 
 ## Step 1：篩選（/filter）
 
-從 ANALYSIS.md（104 系統擷取的候選人摘要清單）中，篩出符合機電/廠務/工程職缺的候選人。
+從 ANALYSIS.md（104 系統擷取的候選人摘要清單）中，依目標角色篩出符合條件的候選人。
 
-**執行方式：**
+**執行方式（依角色）：**
+
 ```bash
-python scripts/pipeline_clean.py ANALYSIS.md       # 三階段清洗
-python scripts/screen_candidates.py ANALYSIS.md     # 評分篩選
+# 三階段清洗（與角色無關，所有模式共用）
+python scripts/pipeline_clean.py ANALYSIS.md
+
+# default 模式：廠務 / 一般 MEP（既有 v8.13 行為）
+python scripts/screen_candidates.py ANALYSIS.md
+
+# mep-design 模式：MEP 設計工程師（用 BIM 做深）
+python scripts/screen_candidates.py ANALYSIS_BIM.md --role=mep-design
+
+# space-manager 模式：空間管理工程師（用 BIM 做廣）
+python scripts/screen_candidates.py ANALYSIS_BIM.md --role=space-manager
 ```
+
+**多角色 overlay 對 N/E/D 規則的影響**：
+- `mep-design`：N6 BIM 升 ★★★ 獨立計分、新增 N18 BIM × MEP 共現、E2/E6/E8 條件化解禁、新增 D7 BIM-only 降級
+- `space-manager`：上述全包，再加 N19 空間/法規、N20 跨系統整合；學歷與管理權重微降
 
 **三階段清洗：**
 1. 移除 104 系統雜訊（版權宣告、選單、公告等）
@@ -137,6 +176,8 @@ python scripts/extract_hr_data.py     # Markdown → CSV（含自動防幻覺抽
 | 總年資 | 數字 |
 | 前二次任職公司 | 扣除最新一家後的近兩次經歷 |
 | **審閱排除理由簡述** | 非正式候選人的排除/降級原因（/review 後新增） |
+
+> **歷史選人 CSV（`historical_selections.csv`）多了一個 `角色` 欄**（v9.0 起），標記每筆記錄屬於哪個角色（default / mep-design / space-manager），跨角色比較用。
 
 ---
 

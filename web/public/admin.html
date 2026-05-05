@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HRMD 後台管理 | Admin Dashboard</title>
+    <link rel="stylesheet" href="admin-style.css">
+    <!-- Firebase SDK (compat mode) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Auth Section -->
+        <section id="auth-section" class="auth-container">
+            <div class="login-box">
+                <h1>HRMD 後台管理</h1>
+                <p>管理員登入</p>
+                <button id="google-login-btn" class="google-btn">
+                    <span>🔐</span> 用 Google 帳號登入
+                </button>
+            </div>
+        </section>
+
+        <!-- Admin Dashboard -->
+        <section id="dashboard-section" style="display: none;">
+            <div class="dashboard-header">
+                <h1>HRMD 履歷評分管理儀表板</h1>
+                <div class="user-info">
+                    <span id="user-email"></span>
+                    <button id="logout-btn" class="logout-btn">登出</button>
+                </div>
+            </div>
+
+            <div class="filters">
+                <input type="text" id="search-input" placeholder="搜尋 Email 或姓名..." class="search-box">
+                <select id="sort-by" class="sort-select">
+                    <option value="sequence-desc">序號（新→舊）</option>
+                    <option value="sequence-asc">序號（舊→新）</option>
+                    <option value="upload-desc">上傳次數（多→少）</option>
+                    <option value="lastupload-desc">最後上傳時間（新→舊）</option>
+                </select>
+            </div>
+
+            <div id="permission-denied" style="display: none;" class="error-box">
+                <p>❌ 無權限訪問此頁面</p>
+                <p>只有管理員可以查看此儀表板。</p>
+            </div>
+
+            <div id="candidates-container" class="candidates-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>序號</th>
+                            <th>姓名</th>
+                            <th>Email</th>
+                            <th>上傳次數</th>
+                            <th>通用評分</th>
+                            <th>BIM 匹配度</th>
+                            <th>最後上傳</th>
+                            <th>詳情</th>
+                        </tr>
+                    </thead>
+                    <tbody id="candidates-tbody">
+                        <!-- Rows will be inserted here -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="loading" style="display: none;" class="loading">
+                <div class="spinner"></div>
+                <p>載入中...</p>
+            </div>
+
+            <div id="no-data" style="display: none;" class="no-data">
+                <p>尚無候選人資料</p>
+            </div>
+        </section>
+
+        <!-- Detail Modal -->
+        <div id="detail-modal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <span class="close-btn">&times;</span>
+                <h2 id="modal-title">候選人詳情</h2>
+                <div id="modal-body">
+                    <!-- Content will be inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase initialization -->
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyCSF5nwR9Nd6UC8voMZ1wOdg2PhVbJxtrY",
+            authDomain: "hrmd-resume-checker-414e4.firebaseapp.com",
+            projectId: "hrmd-resume-checker-414e4",
+            storageBucket: "hrmd-resume-checker-414e4.firebasestorage.app",
+            messagingSenderId: "495177545234",
+            appId: "1:495177545234:web:3487bfde02cd4a842f4acb",
+            measurementId: "G-G5ZBMRYH6W"
+        };
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    </script>
+
+    <script src="admin.js"></script>
+</body>
+</html>

@@ -12,10 +12,131 @@ import sys
 import re
 import os
 import io
+import argparse
 
 # Ensure UTF-8 output on Windows terminals (prevents cp950 UnicodeEncodeError)
 if sys.stdout.encoding != 'utf-8':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
+# 多角色 overlay 機制
+# default = 既有 v8.13 行為（不變），mep-design / space-manager 啟用 overlay 加分與條件化解禁
+SUPPORTED_ROLES = ['default', 'mep-design', 'space-manager']
+
+# Overlay 用的 BIM 與 MEP 關鍵字組（N18 BIM × MEP 共現用）
+BIM_TOKENS = [
+    'BIM', 'Revit', 'Navisworks', 'IFC', 'BEP', 'LOD', 'BIM360', 'CDE',
+    'clash', 'Clash', '碰撞', '衝突檢測', '模型協調', '模型整合', 'Dynamo',
+    # v0.3 新增（依 2026-04-30 結案 11 位正式候選實證工具）
+    'Smart3D', 'SmartPlant', 'SketchUp', 'BIM-19650', 'ISO 19650',
+]
+MEP_TOKENS = [
+    '空調', 'HVAC', '消防', '電力', '配電', '給排水', '純水', '廢水',
+    '管線', '配管', '機電', 'MEP', '五大管線', '無塵室', '潔淨室',
+    '冰水', '冷卻水', 'P&ID', '建廠', '擴廠', 'EPC', '統包',
+]
+# space-manager 專用關鍵字
+SPACE_TOKENS = [
+    '空間規劃', '空間整合', '空間管理', 'Space Planning', '淨高', '淨空',
+    '樓層配置', '配置', '平面規劃', '樓板', '機房', '管道間', 'Shaft',
+]
+REGULATION_TOKENS = [
+    '建築技術規則', '消防法規', '無障礙', '綠建築', 'IECC', 'ASHRAE', 'NFPA',
+    '規範', '法規', '標準', 'Code', '合規', '申照', '檢查', '查驗',
+    # v0.3 新增（依 2026-04-30 結案 11 位實證；保守：只加「具體認證/法規制度」）
+    '執照圖', '申照圖', '性能式審查', 'WELL', '鉑金級', 'PIC/S', 'GMP',
+    'local code',
+]
+CROSS_SYSTEM_TOKENS = [
+    '跨系統', '界面整合', '界面協調', 'Coordination', 'Clash',
+    '衝突檢測', '碰撞檢測', 'Integration', '整合', '協調',
+    '跨領域', 'Multi-discipline',
+    # v0.3 新增（依 2026-04-30 結案 11 位實證；保守：避開純建模常用詞）
+    # 注意：故意不加 'CSD', '審圖', '套圖' 單詞——這些在純建模履歷中也大量出現會誤判
+    'CSD/SEM', 'CSD&SEM', 'PCM&承攬商', 'PCM承攬商',
+]
+# space-manager v0.2 新增（用於 _is_bim_unlock 收緊、D11/D12/D13）
+MEP_SUBSTANCE_TOKENS = [
+    '機電', '空調', 'HVAC', '消防', '電力', '配電', '給排水',
+    '管線', '配管', '無塵室', '建廠', '擴廠', 'MEP', '廠務',
+    '監造', '監工', '水處理',
+]
+MODELING_TERMS = [
+    '繪圖', '建模', '塑模', '套圖', '審圖', '模型',
+]
+STRUCTURE_TOKENS = [
+    '柱樑', '樑柱', '結構設計', '結構分析', '結構技師',
+    '混凝土', '鋼筋', '配筋', 'RC結構', 'SRC', 'SS結構',
+]
+TEACHING_TOKENS = [
+    '兼任講師', '兼講師', '課程講師', '教學助教',
+    '實習助教', '教育訓練', 'Trainer', 'Instructor',
+]
+
+
+class RoleOverlay:
+    """角色 overlay 配置：default 行為由所有 flag 為 False 表達，與 v8.13 完全一致。"""
+
+    def __init__(self, role_name='default'):
+        self.role_name = role_name
+        # N 條件 overlay
+        self.n6_independent_score = 0      # >0 時 N6 獨立計分（mep-design / space-manager: 12）
+        self.enable_n18_bim_mep = False    # BIM × MEP 共現
+        self.n18_base_weight = 0           # 命中 1 段 +N，命中 2+ 段 +(N+3)
+        self.enable_n19_space_reg = False  # 空間整合 / 法規理解
+        self.enable_n20_cross_system = False  # 跨系統界面協調
+        self.n1_weight_override = None     # space-manager: 微降為 +10
+        self.n17_weight_override = None    # tuple (single_hit, multi_hit) 覆寫 N17 加分
+        # E 條件 overlay
+        self.unlock_e2_e6_e8_for_engineering = False  # 條件化解禁
+        self.require_mep_substance_for_unlock = False  # space-manager v0.2: 解禁需 MEP 實質
+        self.tighten_interior_design_unlock = False    # space-manager v0.2: 室內設計收緊解禁
+        # D 條件 overlay
+        self.enable_d7_bim_only = False
+        self.d7_space_softens_penalty = False  # space-manager: 若有空間/整合命中則不扣 D7
+        self.enable_d11_bim_instructor = False         # space-manager v0.2: BIM 講師/教學降級
+        self.enable_d12_pure_modeler = False           # space-manager v0.2: 純建模人員降級
+        self.enable_d13_pure_civil_structure = False   # space-manager v0.2: 純土建結構降級
+
+
+def get_overlay(role_name):
+    """根據 role_name 取得對應 overlay 配置。"""
+    overlay = RoleOverlay(role_name)
+    if role_name == 'mep-design':
+        overlay.n6_independent_score = 12
+        overlay.enable_n18_bim_mep = True
+        overlay.n18_base_weight = 12
+        overlay.n17_weight_override = (8, 15)  # default: (10, 20)
+        overlay.unlock_e2_e6_e8_for_engineering = True
+        overlay.enable_d7_bim_only = True
+    elif role_name == 'space-manager':
+        overlay.n6_independent_score = 12
+        overlay.enable_n18_bim_mep = True
+        overlay.n18_base_weight = 8
+        overlay.enable_n19_space_reg = True
+        overlay.enable_n20_cross_system = True
+        overlay.n1_weight_override = 10
+        overlay.n17_weight_override = (5, 10)
+        overlay.unlock_e2_e6_e8_for_engineering = True
+        overlay.enable_d7_bim_only = True
+        overlay.d7_space_softens_penalty = True
+        # v0.2 收緊（依 2026-04-30 使用者回饋：5 位純建模/講師/室內設計/結構柱樑誤選）
+        overlay.require_mep_substance_for_unlock = True
+        overlay.tighten_interior_design_unlock = True
+        overlay.enable_d11_bim_instructor = True
+        overlay.enable_d12_pure_modeler = True
+        overlay.enable_d13_pure_civil_structure = True
+    return overlay
+
+
+def _count_bim_mep_cooccurrence(work_lines):
+    """計算 BIM × MEP 共現的段落數（同一段中同時出現 BIM 與 MEP 關鍵字才算）。"""
+    cooccur = 0
+    for line in work_lines:
+        has_bim = any(tok in line for tok in BIM_TOKENS)
+        has_mep = any(tok in line for tok in MEP_TOKENS)
+        if has_bim and has_mep:
+            cooccur += 1
+    return cooccur
 
 # ============================
 # 規則定義（來自人才候選計畫.md）
@@ -232,8 +353,14 @@ def parse_candidates(lines):
 # ============================
 # 評分引擎
 # ============================
-def score_candidate(c):
-    """對單一候選人進行規則評分，回傳 (分數, 理由列表, 是否排除)。"""
+def score_candidate(c, overlay=None):
+    """對單一候選人進行規則評分，回傳 (分數, 理由列表, 是否排除)。
+
+    overlay 為 None 時自動建立 default overlay（行為與 v8.13 完全一致）。
+    """
+
+    if overlay is None:
+        overlay = RoleOverlay('default')
 
     score = 0
     reasons = []
@@ -245,11 +372,46 @@ def score_candidate(c):
     work_and_desired = work_text + '\n' + desired
     name_clean = c['name'].replace(' ', '')
 
+    # Overlay 解禁判斷用：BIM 相關擊殺詞（mep-design / space-manager 條件化解禁的對象）
+    bim_related_kill_tokens = ['繪圖員', 'BIM建模員', 'bim建模員', 'BIM工程師', '室內設計', '室內裝修', '建築設計']
+
+    def _is_bim_unlock(hit_kws):
+        """條件化解禁：僅在 overlay 啟用、命中詞為 BIM 相關、且候選人通過 M1 核心職稱或 M2 產業關鍵字時返回 True。
+
+        space-manager v0.2 額外收緊：
+        - 室內設計：若希望職稱與工作經歷皆顯示純室內設計背景則不解禁。
+        - 解禁仍需工作經歷有 MEP/廠務實質字眼。
+        """
+        if not overlay.unlock_e2_e6_e8_for_engineering:
+            return False
+        if not any(kw in bim_related_kill_tokens for kw in hit_kws):
+            return False
+
+        # space-manager v0.2: 室內設計收緊
+        if overlay.tighten_interior_design_unlock and '室內設計' in hit_kws:
+            if '室內設計' in desired and work_text.count('室內設計') >= 2:
+                return False
+
+        recent_works = '\n'.join(c['work_lines'][:3]) if c['work_lines'] else ""
+        has_core_title = any(kw in recent_works for kw in CORE_TITLE_KEYWORDS)
+        has_company = any(kw in full for kw in COMPANY_KEYWORDS)
+        base_pass = has_core_title or has_company
+
+        # space-manager v0.2: 解禁需要工作經歷有 MEP 實質字眼
+        if overlay.require_mep_substance_for_unlock:
+            has_mep_substance = any(tok in work_text for tok in MEP_SUBSTANCE_TOKENS)
+            return base_pass and has_mep_substance
+
+        return base_pass
+
     # --- 排除條件 ---
     # E8: 絕對封殺 (無視其他工程師/機電加分字眼)
     kill_hits = [kw for kw in ABSOLUTE_KILL_KEYWORDS if kw in work_and_desired.lower()]
     if kill_hits:
-        return 0, [f"排除(E8): 絕對不適任={','.join(kill_hits[:2])}"], True
+        if _is_bim_unlock(kill_hits):
+            reasons.append(f"E8條件化解禁({overlay.role_name}): {','.join(kill_hits[:2])}通過 M1/M2 工程門檻")
+        else:
+            return 0, [f"排除(E8): 絕對不適任={','.join(kill_hits[:2])}"], True
 
     # E1: 經歷純粹為保全/門市/餐飲
     if desired:
@@ -260,8 +422,12 @@ def score_candidate(c):
 
     # E2: 希望職稱包含非工程關鍵字
     if desired:
-        if any(kw in desired for kw in NON_ENGINEERING_DESIRED):
-            return 0, [f"排除(E2): 希望職稱非工程={desired[:30]}"], True
+        e2_hits = [kw for kw in NON_ENGINEERING_DESIRED if kw in desired]
+        if e2_hits:
+            if _is_bim_unlock(e2_hits):
+                reasons.append(f"E2條件化解禁({overlay.role_name}): {','.join(e2_hits[:2])}通過 M1/M2 工程門檻")
+            else:
+                return 0, [f"排除(E2): 希望職稱非工程={desired[:30]}"], True
 
     # E3: 脫離高度工程專業（低階維修/作業員）
     low_skill_hits = [kw for kw in LOW_SKILL_KEYWORDS if kw in desired or kw in first_work]
@@ -273,7 +439,10 @@ def score_candidate(c):
         has_mgmt_or_eng = False
 
     if low_skill_hits and not has_mgmt_or_eng:
-        return 0, [f"排除(E3): 脫離工程專業={','.join(low_skill_hits[:2])}"], True
+        if _is_bim_unlock(low_skill_hits):
+            reasons.append(f"E6/E3條件化解禁({overlay.role_name}): {','.join(low_skill_hits[:2])}通過 M1/M2 工程門檻")
+        else:
+            return 0, [f"排除(E3): 脫離工程專業={','.join(low_skill_hits[:2])}"], True
 
     # E4: 純土建/營造人員無建廠/廠房營造經驗
     is_pure_civil = (c['group'] == 'G1_土木建築') or any(kw in desired + work_text for kw in ['建築', '營建', '土木', '營造'])
@@ -392,11 +561,15 @@ def score_candidate(c):
     # --- 加分條件（N1-N16）---
     # 每項代表一個有價值的 MEP/廠務能力指標，累計加分。
     # ★★★ = 高權重（15分）, ★★☆ = 中權重（5-10分）, ★☆☆ = 低權重（3分）
-    # N1: 學歷科系 (★★★)
+    # N1: 學歷科系 (★★★) — overlay 可覆寫權重（space-manager: +10）
     n1_hits = [kw for kw in EDU_KEYWORDS if kw in edu]
     if n1_hits:
-        score += 15
-        reasons.append(f"N1學歷對口: {','.join(n1_hits[:2])}")
+        n1_weight = overlay.n1_weight_override if overlay.n1_weight_override is not None else 15
+        score += n1_weight
+        if overlay.n1_weight_override is not None:
+            reasons.append(f"N1學歷對口: {','.join(n1_hits[:2])} (+{n1_weight})")
+        else:
+            reasons.append(f"N1學歷對口: {','.join(n1_hits[:2])}")
 
     # N2/N3: 知名公司 (★★★)
     n23_hits = [kw for kw in PREMIUM_COMPANIES if kw in full]
@@ -418,6 +591,13 @@ def score_candidate(c):
     elif len(n5_hits) >= 1:
         score += 5
         reasons.append(f"N5系統: {','.join(n5_hits[:3])}")
+
+    # N6: BIM/Revit/AutoCAD 獨立計分（僅在 mep-design / space-manager overlay 下啟用）
+    if overlay.n6_independent_score > 0:
+        n6_hits = [kw for kw in BIM_TOKENS if kw in full]
+        if n6_hits:
+            score += overlay.n6_independent_score
+            reasons.append(f"N6 BIM工具能力: {','.join(n6_hits[:3])} (+{overlay.n6_independent_score})")
 
     # N7: 監造 (★★☆) — 品管已移至 N13 獨立計分
     if any(kw in full for kw in ['監造', '監工', '施工監督']):
@@ -454,13 +634,54 @@ def score_candidate(c):
     # N17: 高科技建廠核心經驗 (★★★★) — 最高權重
     # 命中 2 項以上 = +20 (VIP級高科即戰力)
     # 命中 1 項    = +10 (具備高科基礎)
+    # overlay 可覆寫加分 tuple (single_hit, multi_hit)
+    n17_overridden = overlay.n17_weight_override is not None
+    n17_single, n17_multi = overlay.n17_weight_override if n17_overridden else (10, 20)
     n17_hits = [kw for kw in HIGH_TECH_FAB_KEYWORDS if kw in full]
     if len(n17_hits) >= 2:
-        score += 20
-        reasons.append(f"N17高科建廠VIP: {','.join(n17_hits[:4])} ({len(n17_hits)}項)")
+        score += n17_multi
+        suffix = f" (+{n17_multi})" if n17_overridden else ""
+        reasons.append(f"N17高科建廠VIP: {','.join(n17_hits[:4])} ({len(n17_hits)}項){suffix}")
     elif len(n17_hits) >= 1:
-        score += 10
-        reasons.append(f"N17高科建廠: {','.join(n17_hits[:3])}")
+        score += n17_single
+        suffix = f" (+{n17_single})" if n17_overridden else ""
+        reasons.append(f"N17高科建廠: {','.join(n17_hits[:3])}{suffix}")
+
+    # === Overlay-only 加分（mep-design / space-manager）===
+
+    # N18: BIM × MEP 共現（反「BIM 表演」核心規則）
+    if overlay.enable_n18_bim_mep:
+        cooccur_count = _count_bim_mep_cooccurrence(c['work_lines'])
+        if cooccur_count >= 2:
+            score += overlay.n18_base_weight + 3
+            reasons.append(f"N18 BIM×MEP共現({cooccur_count}段) (+{overlay.n18_base_weight + 3})")
+        elif cooccur_count == 1:
+            score += overlay.n18_base_weight
+            reasons.append(f"N18 BIM×MEP共現(1段) (+{overlay.n18_base_weight})")
+
+    # N19: 空間整合 / 法規理解（space-manager 核心）
+    if overlay.enable_n19_space_reg:
+        space_hits = [kw for kw in SPACE_TOKENS if kw in full]
+        reg_hits = [kw for kw in REGULATION_TOKENS if kw in full]
+        if space_hits and reg_hits:
+            score += 15
+            reasons.append(f"N19空間+法規: {','.join((space_hits + reg_hits)[:3])} (+15)")
+        elif space_hits:
+            score += 8
+            reasons.append(f"N19空間規劃: {','.join(space_hits[:2])} (+8)")
+        elif reg_hits:
+            score += 6
+            reasons.append(f"N19法規理解: {','.join(reg_hits[:2])} (+6)")
+
+    # N20: 跨系統界面協調（space-manager 核心）
+    if overlay.enable_n20_cross_system:
+        cross_hits = [kw for kw in CROSS_SYSTEM_TOKENS if kw in full]
+        if len(cross_hits) >= 2:
+            score += 12
+            reasons.append(f"N20跨系統整合: {','.join(cross_hits[:3])} ({len(cross_hits)}項) (+12)")
+        elif len(cross_hits) == 1:
+            score += 6
+            reasons.append(f"N20跨系統整合: {cross_hits[0]} (+6)")
 
     # 傳統重電降階: 僅命中傳統公司(中興電工/士林電機/東元)但無任何高科關鍵字
     # → 扣回 M2 給的 10 分，因為傳統重電(變電站/馬達)≠高科建廠(FAB/Utility)
@@ -520,6 +741,82 @@ def score_candidate(c):
         # score -= 15  # 取消嚴格扣分
         reasons.append("D6履歷單薄(待PDF判定降級)")
 
+    # D7: BIM-only 降級（mep-design / space-manager overlay 啟用，反「BIM 外衣」核心規則）
+    if overlay.enable_d7_bim_only:
+        has_bim = any(tok in work_and_desired for tok in BIM_TOKENS)
+        has_mep_or_epc = any(
+            tok in work_and_desired for tok in
+            ['空調', '消防', '電力', '給排水', '機電', '廠務', '建廠', '擴廠',
+             'EPC', '統包', 'MEP', '無塵室', 'HVAC', '管線', '配管']
+        )
+        if has_bim and not has_mep_or_epc:
+            # space-manager 例外：若有空間/整合/法規關鍵字則不扣分
+            if overlay.d7_space_softens_penalty:
+                has_space_or_cross = (
+                    any(tok in work_and_desired for tok in SPACE_TOKENS)
+                    or any(tok in work_and_desired for tok in CROSS_SYSTEM_TOKENS)
+                    or any(tok in work_and_desired for tok in REGULATION_TOKENS)
+                )
+                if not has_space_or_cross:
+                    score -= 15
+                    reasons.append("D7 BIM-only 降級: BIM 外衣但無工程/空間實質 (-15)")
+            else:
+                score -= 15
+                reasons.append("D7 BIM-only 降級: BIM 外衣但無 MEP/廠務實質 (-15)")
+
+    # D11: BIM 講師 / 教學身份降級（space-manager overlay v0.2）
+    # 反「BIM 講師包裝」：候選人在 BIM 角色中兼任講師/教學/助教，視為偏教學而非工程實作
+    if overlay.enable_d11_bim_instructor:
+        triggered_segments = []
+        for line in c['work_lines']:
+            has_bim = any(tok in line for tok in BIM_TOKENS)
+            teaching_hits = [tok for tok in TEACHING_TOKENS if tok in line]
+            if has_bim and teaching_hits:
+                triggered_segments.append(teaching_hits[0])
+        desired_teaching = []
+        if any(tok in desired for tok in BIM_TOKENS):
+            desired_teaching = [t for t in ['教學', '助教', '講師'] if t in desired]
+        if triggered_segments or desired_teaching:
+            score -= 20
+            evidence = (triggered_segments + desired_teaching)[:2]
+            reasons.append(f"D11 BIM講師/教學身份: {','.join(evidence)} (-20)")
+
+    # D12: 純建模人員降級（space-manager overlay v0.2）
+    # 反「純 Revit 操作員」：BIM/繪圖/建模段落佔比過半，且純工程實質段（不含建模字眼）≤1
+    if overlay.enable_d12_pure_modeler:
+        related_segs = 0
+        substance_segs_strict = 0
+        for line in c['work_lines']:
+            has_modeling = (
+                any(tok in line for tok in BIM_TOKENS)
+                or any(tok in line for tok in MODELING_TERMS)
+            )
+            has_substance = any(tok in line for tok in MEP_SUBSTANCE_TOKENS)
+            if has_modeling:
+                related_segs += 1
+            if has_substance and not has_modeling:
+                substance_segs_strict += 1
+        total_segs = len(c['work_lines'])
+        if total_segs >= 3 and related_segs / total_segs >= 0.5 and substance_segs_strict <= 1:
+            # space-manager 例外：同時命中空間 AND 法規 → 不扣（具備空間規劃 + 規範理解可救回）
+            has_space = any(tok in work_and_desired for tok in SPACE_TOKENS)
+            has_reg = any(tok in work_and_desired for tok in REGULATION_TOKENS)
+            if not (has_space and has_reg):
+                score -= 25
+                reasons.append(
+                    f"D12 純建模人員: 建模段{related_segs}/{total_segs}, 純工程實質段{substance_segs_strict} (-25)"
+                )
+
+    # D13: 純土建/結構柱樑無 MEP/空間整合降級（space-manager overlay v0.2）
+    # 反「結構繪圖匠」：履歷大量結構/柱樑/RC 字眼但缺 MEP 與空間整合，與空間管理職缺輪廓不符
+    if overlay.enable_d13_pure_civil_structure:
+        structure_hits = [kw for kw in STRUCTURE_TOKENS if kw in work_text]
+        has_mep_token = any(tok in work_text for tok in MEP_TOKENS)
+        has_space_token = any(tok in work_text for tok in SPACE_TOKENS)
+        if len(structure_hits) >= 2 and not has_mep_token and not has_space_token:
+            score -= 15
+            reasons.append(f"D13 純土建結構: {','.join(structure_hits[:2])} 缺MEP/空間 (-15)")
+
     return score, reasons, False
 
 
@@ -527,11 +824,20 @@ def score_candidate(c):
 # 主流程
 # ============================
 def main():
-    if len(sys.argv) < 2:
-        print("用法: python screen_candidates.py <ANALYSIS.md路徑>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description='候選人篩選引擎（支援多角色 overlay）',
+        epilog='範例: python screen_candidates.py ANALYSIS.md --role=mep-design'
+    )
+    parser.add_argument('analysis_path', help='ANALYSIS.md 路徑')
+    parser.add_argument(
+        '--role', default='default', choices=SUPPORTED_ROLES,
+        help='角色模式（預設 default = v8.13 既有行為）'
+    )
+    args = parser.parse_args()
 
-    filepath = sys.argv[1]
+    filepath = args.analysis_path
+    role = args.role
+
     if not os.path.isfile(filepath):
         print(f"錯誤：找不到檔案 {filepath}")
         sys.exit(1)
@@ -540,6 +846,19 @@ def main():
         lines = f.read().replace('\r\n', '\n').split('\n')
 
     candidates = parse_candidates(lines)
+    overlay = get_overlay(role)
+    print(f"角色模式: {role}")
+    if role != 'default':
+        print(f"  → 已載入 overlay: N6 獨立計分={overlay.n6_independent_score}, "
+              f"N18 BIM×MEP={overlay.enable_n18_bim_mep}, "
+              f"N19 空間/法規={overlay.enable_n19_space_reg}, "
+              f"N20 跨系統={overlay.enable_n20_cross_system}, "
+              f"D7 BIM-only={overlay.enable_d7_bim_only}")
+    if any([overlay.enable_d11_bim_instructor,
+            overlay.enable_d12_pure_modeler,
+            overlay.enable_d13_pure_civil_structure]):
+        print(f"  → space-manager v0.2 補強: D11 BIM講師, D12 純建模, D13 純土建結構, "
+              f"E2/E8 解禁需 MEP 實質, 室內設計收緊")
     print(f"共解析 {len(candidates)} 位候選人\n")
 
     # 篩選
@@ -549,7 +868,7 @@ def main():
     threshold = 20  # 最低分數門檻（v2.1 提高：避免泛用詞矇混）
 
     for c in candidates:
-        score, reasons, is_excluded = score_candidate(c)
+        score, reasons, is_excluded = score_candidate(c, overlay)
         if is_excluded:
             excluded += 1
             continue

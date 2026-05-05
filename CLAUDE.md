@@ -17,7 +17,9 @@
 
 ## 專案總覽
 
-本專案為「104 履歷自動化解析與人才篩選系統」，用於協助 HR 從 104 人力銀行的大量候選人中，快速篩選出符合機電/廠務/工程職缺的面試人選。
+本專案為「104 履歷自動化解析與人才篩選系統」，用於協助 HR 從 104 人力銀行的大量候選人中，快速篩選出符合中鼎工程系統部多角色職缺的面試人選。
+
+**從 v9.0 起採用多角色 overlay 機制**：同一條 4 步驟流程（`/filter` → `/merge` → `/improve` → `/review`）以 `--role` 參數分流支援 `default`（廠務/一般 MEP）/ `mep-design`（MEP 設計）/ `space-manager`（空間管理）三種角色。詳見下方「多角色 overlay 機制」章節。
 
 ### 業務流程（必須理解的上下游關係）
 
@@ -122,21 +124,70 @@ c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe
 
 ### /filter
 ```bash
+# default 模式（既有 v8.13 行為）
 "c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/pipeline_clean.py ANALYSIS.md
 "c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS.md
+
+# mep-design 模式（用 BIM 做機電設計）
+"c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS_BIM.md --role=mep-design
+
+# space-manager 模式（用 BIM 做空間整合）
+"c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS_BIM.md --role=space-manager
 ```
 
 ### /merge
 ```bash
+# 與角色無關
 "c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-resume-parser/scripts/convert_pdfs.py
 "c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-resume-parser/scripts/extract_hr_data.py
 ```
 
-### /improve
-手動流程：分析 HR 回饋（漏選/誤選）→ 更新 `screening_rules.md` + `screen_candidates.py` → 追加 `iteration_log.md` + `historical_selections.csv`
+### /improve [--role=<role>]
+手動流程：分析 HR 回饋 → 更新規則（default 寫主規則檔；其他角色寫 `role_overlays/<role>.md`）+ `screen_candidates.py` → 追加 `iteration_log.md`（所有角色共寫）+ `historical_selections.csv`（含「角色」欄）
 
-### /review
-手動流程：地毯式掃描 CSV → 標註分類 → 驗證 CSV↔PDF 一致性 → 反饋規則缺口 → 追加日誌
+### /review [--role=<role>]
+手動流程：地毯式掃描 CSV（用對應 role 的評分維度）→ 標註分類 → 驗證 CSV↔PDF 一致性 → 反饋規則缺口至對應 role overlay → 追加日誌
+
+---
+
+## 多角色 Overlay 機制（v9.0 新增）
+
+> **核心架構洞察**：BIM 是組織級的基礎工具，不是某職務的專業。同部門多角色互相支援、知識交流，所以系統採用「同 pipeline 內 overlay 分流」而非「fork 成獨立 pipeline」。
+
+### Commons 與 Overlay 的劃分原則
+
+**Commons（所有角色共用）**——寫在主規則檔：
+- M1-M3 必要條件（保證候選人先有工程底）
+- CSV 欄位結構（11 欄）
+- 三階段清洗、PDF→Markdown→欄位擷取
+
+**Overlay（角色專屬）**——寫在 `role_overlays/<role>.md`：
+- N 條件權重調整（N6 升、N1 降等）
+- 新增 N 條件（N18 BIM × MEP 共現、N19 空間/法規、N20 跨系統整合）
+- E 條件條件化解禁（E2/E6/E8 在工程門檻通過時解禁）
+- 新增 D 條件（D7 BIM-only 降級）
+- 評分維度權重翻轉（`bim_scorer.py`）
+
+### 角色清單
+
+| Role 代碼 | 中文名 | 主任務 | 風格 |
+|-----------|--------|--------|------|
+| `default` | 廠務 / 一般 MEP（既有） | 廠務、施工、維運、機電監造 | （既有 v8.13） |
+| `mep-design` | MEP 設計工程師 | 用 BIM 做機電系統設計 | **做深** |
+| `space-manager` | 空間管理工程師 | 用 BIM 做空間整合、規範理解 | **做廣** |
+
+### 新增角色的 SOP
+
+未來若要新增角色（如 `commissioning`、`energy-specialist`）：
+
+1. 在 `role_overlays/` 新增 `<role-name>.md`，遵循既有檔案結構（角色定義 / Commons 繼承 / N 條件 overlay / E 條件 overlay / D 條件 overlay / 評分維度 / 樣本特徵）
+2. 在 `screen_candidates.py` 的 `SUPPORTED_ROLES` 與 `get_overlay()` 新增對應 entry
+3. 在 `bim_scorer.py` 的 `ROLE_WEIGHTS` 新增對應權重 dict
+4. 跑既有 ANALYSIS.md（不帶 `--role`）byte-for-byte 驗證 default 行為未變
+5. 跑該角色的真實候選池驗證 overlay 區分力
+6. 同步更新 `README.md` 與本檔案
+
+**不要 fork 整條 pipeline**——overlay 機制就是為了保護「同部門知識交流」的架構哲學。
 
 ---
 

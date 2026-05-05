@@ -2,3 +2,5 @@ flask==3.1.0
 gunicorn==23.0.0
 markitdown[pdf]
 flask-cors==5.0.0
+sendgrid==6.11.0
+python-dotenv==1.0.0

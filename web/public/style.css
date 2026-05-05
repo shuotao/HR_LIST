@@ -21,8 +21,18 @@ body {
 
 /* === Header === */
 header {
-    text-align: center;
     padding: 32px 0 16px;
+}
+
+.header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    text-align: center;
+}
+
+.header-content > div {
+    flex: 1;
 }
 
 header h1 {
@@ -35,6 +45,79 @@ header h1 {
     color: #607d8b;
     font-size: 0.9rem;
     margin-top: 4px;
+}
+
+.admin-login-icon {
+    font-size: 28px;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.3s;
+    text-decoration: none;
+    user-select: none;
+}
+
+.admin-login-icon:hover {
+    opacity: 1;
+}
+
+/* 手機介面隱藏登入按鈕 */
+@media (max-width: 768px) {
+    .admin-login-icon {
+        display: none !important;
+    }
+}
+
+/* === User Info Section === */
+.user-info-section {
+    background: white;
+    padding: 24px;
+    border-radius: 8px;
+    margin: 24px 0;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.user-info-section h2 {
+    font-size: 1.1rem;
+    color: #37474f;
+    margin-bottom: 16px;
+}
+
+.info-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.form-group label {
+    font-size: 0.9rem;
+    color: #37474f;
+    font-weight: 500;
+    margin-bottom: 6px;
+}
+
+.form-group input {
+    padding: 10px 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: inherit;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: #0d47a1;
+    box-shadow: 0 0 0 3px rgba(13, 71, 161, 0.1);
+}
+
+@media (max-width: 600px) {
+    .info-form {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* === Job Info === */
@@ -561,6 +644,207 @@ footer {
 .footer-note {
     margin-top: 4px;
     font-size: 0.7rem;
+}
+
+/* === Submit Form Section === */
+.submit-section {
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    margin: 20px 0;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    border-left: 4px solid #0d47a1;
+}
+
+.submit-section h2 {
+    font-size: 1.1rem;
+    color: #37474f;
+    margin-bottom: 16px;
+}
+
+#submit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.form-group label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #1a1a2e;
+    margin-bottom: 4px;
+}
+
+.form-group input {
+    padding: 8px 12px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    font-family: inherit;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: #0d47a1;
+    box-shadow: 0 0 0 3px rgba(13, 71, 161, 0.1);
+}
+
+.submit-btn {
+    padding: 10px 20px;
+    background: #1565c0;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.submit-btn:hover {
+    background: #0d47a1;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.submit-success {
+    background: #e8f5e9;
+    border: 1px solid #4caf50;
+    border-radius: 6px;
+    padding: 12px;
+    text-align: center;
+    color: #2e7d32;
+    font-weight: 600;
+}
+
+/* === Admin Panel Styles === */
+.admin-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px 16px;
+    min-height: 100vh;
+    background: #f0f4f8;
+}
+
+.admin-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    background: #fff;
+    padding: 16px 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.admin-header h1 {
+    color: #0d47a1;
+    font-size: 1.5rem;
+}
+
+.admin-user {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.9rem;
+    color: #37474f;
+}
+
+.logout-btn {
+    padding: 8px 16px;
+    background: #f44336;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: background 0.3s ease;
+}
+
+.logout-btn:hover {
+    background: #d32f2f;
+}
+
+.admin-table-container {
+    background: #fff;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    overflow-x: auto;
+}
+
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.admin-table thead {
+    background: #f5f5f5;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.admin-table th {
+    padding: 12px;
+    text-align: left;
+    font-weight: 600;
+    color: #1a1a2e;
+}
+
+.admin-table td {
+    padding: 12px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.admin-table tr:hover {
+    background: #fafafa;
+}
+
+.admin-login {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    gap: 16px;
+}
+
+.admin-login h1 {
+    color: #0d47a1;
+    font-size: 1.8rem;
+    margin-bottom: 12px;
+}
+
+.admin-login-btn {
+    padding: 12px 24px;
+    background: #1565c0;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.admin-login-btn:hover {
+    background: #0d47a1;
+    transform: translateY(-2px);
+}
+
+.admin-error {
+    text-align: center;
+    color: #d32f2f;
+    font-size: 0.95rem;
+    padding: 20px;
+    background: #ffebee;
+    border-radius: 6px;
+    border: 1px solid #ef5350;
+    margin-top: 16px;
 }
 
 /* === Responsive === */

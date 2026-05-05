@@ -9,8 +9,12 @@
 <body>
     <div class="container">
         <header>
-            <h1>HRMD 履歷健康檢查</h1>
-            <p class="subtitle">Resume Health Check System</p>
+            <div class="header-content">
+                <div>
+                    <h1>HRMD 履歷健康檢查</h1>
+                    <p class="subtitle">Resume Health Check System</p>
+                </div>
+            </div>
         </header>
 
         <section class="job-info">
@@ -56,6 +60,20 @@
                         <li>維護模型資料庫，並確實將資料統整於CDE系統環境。</li>
                         <li>協調和管理BIM模型使其符合業主設定之交付時程，並確保模型的品質。</li>
                     </ol>
+                </div>
+            </div>
+        </section>
+
+        <section class="user-info-section">
+            <h2>您的基本資訊</h2>
+            <div class="info-form">
+                <div class="form-group">
+                    <label for="user-name">姓名</label>
+                    <input type="text" id="user-name" placeholder="(選填)">
+                </div>
+                <div class="form-group">
+                    <label for="user-email">Email</label>
+                    <input type="email" id="user-email" placeholder="(選填)">
                 </div>
             </div>
         </section>
@@ -150,6 +168,7 @@
 
             <button class="retry-btn" onclick="resetUI()">上傳其他履歷</button>
         </section>
+
 
         <footer>
             <p>HRMD Resume Health Check &copy; 2026 | Powered by CTCI Screening Engine</p>

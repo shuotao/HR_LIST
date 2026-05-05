@@ -239,7 +239,16 @@ def extract_from_md(file_path):
 def process_all():
     import random
 
-    base_dir = r"c:\Users\01102088\Desktop\HRMD"
+    # 跨平台路徑解析（2026-04-30 新增）
+    # - Windows：沿用使用者既有 HRMD 工作目錄（不變）
+    # - macOS / Linux：從腳本位置往上推算專案根目錄
+    #   scripts/ → hr-resume-parser/ → skills/ → .agent/ → 專案根
+    if sys.platform == 'win32':
+        base_dir = r"c:\Users\01102088\Desktop\HRMD"
+    else:
+        base_dir = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), '..', '..', '..', '..')
+        )
 
     # === 白名單邏輯：只處理有對應 .pdf 的 .md 檔案 ===
     pdf_set = {os.path.splitext(f)[0] for f in os.listdir(base_dir) if f.lower().endswith('.pdf')}

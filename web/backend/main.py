@@ -7,14 +7,21 @@ POST /api/analyze — Upload PDF resume, get scoring results.
 
 import os
 import tempfile
+from pathlib import Path
+from dotenv import load_dotenv
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from markitdown import MarkItDown
 
+# Load .env file
+env_path = Path(__file__).parent / '.env'
+load_dotenv(env_path)
+
 from extractor import extract_from_markdown
 from scoring import score_candidate_from_resume
 from bim_scorer import score_bim_manager
+from email_sender import send_scoring_result
 
 app = Flask(__name__)
 CORS(app)
@@ -67,8 +74,11 @@ def analyze():
         # Step 3: General scoring (M/N/E/D)
         general_result = score_candidate_from_resume(candidate)
 
-        # Step 4: BIM Manager position scoring
-        bim_result = score_bim_manager(candidate)
+        # Step 4: Role-aware position scoring (default = BIM Manager legacy)
+        role = request.form.get('role', 'default')
+        if role not in ('default', 'mep-design', 'space-manager'):
+            role = 'default'
+        bim_result = score_bim_manager(candidate, role=role)
 
         # Build response
         response = {
@@ -94,6 +104,28 @@ def analyze():
             os.unlink(tmp_path)
         except OSError:
             pass
+
+
+@app.route('/api/submit-result', methods=['POST'])
+def submit_result():
+    """Save result to Firestore."""
+    data = request.get_json()
+
+    if not data:
+        return jsonify({'error': '無效的請求'}), 400
+
+    name = data.get('name', '').strip()
+    email = data.get('email', '').strip()
+    general_score = data.get('general_score')
+    bim_score = data.get('bim_score')
+
+    if not name or not email:
+        return jsonify({'error': '請提供姓名和 Email'}), 400
+
+    if not general_score or not bim_score:
+        return jsonify({'error': '缺少評分資料'}), 400
+
+    return jsonify({'status': 'success', 'message': '感謝！評分已儲存'})
 
 
 @app.route('/api/health', methods=['GET'])

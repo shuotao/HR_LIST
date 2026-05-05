@@ -7,6 +7,18 @@
 > `HR_Data_Summary.csv` 代表 HR 最終確認要深入看的人選，是「正確答案」。
 > 本步驟的目的是用這份正確答案回頭精煉篩選規則，讓下一次 `/filter` 自動篩出更接近 HR 期望的結果。
 
+### 角色模式（多角色 overlay）
+
+從 v9.0 起，本指令支援 `--role` 參數，依角色決定規則更新的寫入路徑：
+
+| 角色 | 規則更新寫入位置 |
+|------|------------------|
+| `default`（不帶參數） | 主規則檔 `screening_rules.md` + 程式碼 `screen_candidates.py`（既有行為） |
+| `mep-design` | overlay 檔 `role_overlays/mep-design.md` + 程式碼 overlay 區段（不污染主規則） |
+| `space-manager` | overlay 檔 `role_overlays/space-manager.md` + 程式碼 overlay 區段 |
+
+無論哪個角色，**疊代日誌（iteration_log.md）、歷史選人 CSV（historical_selections.csv）所有角色共寫**——支持「同部門知識交流」哲學。CSV 的「角色」欄會標記每筆記錄。
+
 ### 輸入來源（按優先順序）
 1. 若使用者剛執行完 `/filter` 並提供了漏選/誤選回饋 → 以該回饋為依據
 2. 若專案根目錄存在最新的 `HR_Data_Summary.csv` → 以該 CSV 為已確認入選名單
@@ -36,7 +48,7 @@
 - 只做 Append，不刪除歷史
 
 ### 步驟 5：追加歷史選人紀錄
-將本批次的 CSV 資料（排除非候選人列）追加至 `.agent/skills/hr-talent-screener/references/historical_selections.csv`，加上 batch 欄位標記。
+將本批次的 CSV 資料（排除非候選人列）追加至 `.agent/skills/hr-talent-screener/references/historical_selections.csv`，加上 `batch` 欄位與 `角色` 欄位標記（角色為 default / mep-design / space-manager 之一）。
 
 ### 步驟 6：回報
 向使用者摘要報告：
