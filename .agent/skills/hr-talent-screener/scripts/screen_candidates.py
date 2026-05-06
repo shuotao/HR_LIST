@@ -96,6 +96,10 @@ class RoleOverlay:
         self.enable_d11_bim_instructor = False         # space-manager v0.2: BIM 講師/教學降級
         self.enable_d12_pure_modeler = False           # space-manager v0.2: 純建模人員降級
         self.enable_d13_pure_civil_structure = False   # space-manager v0.2: 純土建結構降級
+        self.enable_bim_developer_unlock = False       # space-manager v0.3: Q1 解禁 BIM+軟體開發者
+        self.enable_high_tech_vip_unlock = False       # space-manager v0.3: Q4 解禁頂尖高科 BIM 人才
+        self.enable_bim_developer_unlock = False
+        self.enable_high_tech_vip_unlock = False
 
 
 def get_overlay(role_name):
@@ -108,6 +112,9 @@ def get_overlay(role_name):
         overlay.n17_weight_override = (8, 15)  # default: (10, 20)
         overlay.unlock_e2_e6_e8_for_engineering = True
         overlay.enable_d7_bim_only = True
+        overlay.require_mep_substance_for_unlock = True
+        overlay.tighten_interior_design_unlock = True
+        overlay.enable_d12_pure_modeler = True
     elif role_name == 'space-manager':
         overlay.n6_independent_score = 12
         overlay.enable_n18_bim_mep = True
@@ -125,6 +132,10 @@ def get_overlay(role_name):
         overlay.enable_d11_bim_instructor = True
         overlay.enable_d12_pure_modeler = True
         overlay.enable_d13_pure_civil_structure = True
+        overlay.enable_bim_developer_unlock = True
+        overlay.enable_high_tech_vip_unlock = True
+        overlay.enable_bim_developer_unlock = True
+        overlay.enable_high_tech_vip_unlock = True
     return overlay
 
 
@@ -233,8 +244,8 @@ NON_ENGINEERING_DESIRED = [
     '軟體', '後端', '前端', '韌體', '資訊', '網管', 'MIS', 
     '研發', '研究', 'CAE', '機構', '熱流', '機器人', '品保', '驗證',
     'BIM工程師', '內業', '專案業務', '系統整合', '講師', '教育', '室內裝修', '室內設計', '建築設計', '業務', '庶務', '物流', '行銷', '航空',
-    '軟工', '軟體工程師', '土開', '土地開發', '研究類別',
-    '實驗室', '校正', '稽核', '採購', '發包', '產品', 'AIOT'
+    '軟工', '軟體工程師', '土開', '土地開發', '研究類別', 'HR', '招募', 'Talent', 'Recruiter', '客戶經理', '客戶服務', '自動控制工程師', '機構設計',
+    '實驗室', '校正', '稽核', '採購', '發包', '產品', 'AIOT', '電商', '業助', '服務工程師'
 ]
 
 # E5 排除：製程/製造/非建廠端
@@ -242,16 +253,16 @@ NON_CONSTRUCTION_MANUFACTURING = [
     '製程', '製造', '生產', '設備工程師', '技術工程師', '生產線', '品保', '機械製造',
     '自動控制', '設計', '機構設計', '工程師', '操作', 'PLC', '電控', 'Field Service', 
     '客服', '設計工程師', '售後服務', 'AIOT', '產品', '韌體', 'FAE', 'fae', '應用工程師',
-    '研發', 'RD', 'R&D', 'rd', '光機', '光電', '微影', '顯示', '開發', '設備維護', '運轉維護', '保養', '設備保養'
+    '研發', 'RD', 'R&D', 'rd', '光機', '光電', '微影', '顯示', '開發', '設備維護', '運轉維護', '保養', '設備保養', '服務工程師', '安裝調試員'
 ]
 
 # E6 排除：脫離高度工程專業 (低階勞力/非專業)
 LOW_SKILL_KEYWORDS = [
-    '作業員', '操作員', '技術員', '助理', '保養', '維修', '外場', '司機', '理貨', 
+    '作業員', '操作員', '技術員', '技術人員', '助理', '保養', '維修', '外場', '內場', '司機', '理貨', 
     '飯店', '旅館', '專員', '維修工程師', '後勤', '裝配', '組裝', '客服工程師', '倉管', '倉庫', '焊接',
     '重機械', '引擎', '管輪', '製圖員', '操作', '養護', '外務', '柏文健康', '家福', '健身', '店長', '修繕',
     '大廈維護', '大樓維護', '大廈管理', '駐點', '展場', '繪圖員', 'BIM建模員', '總務', '後端', '研究類別', '研究員',
-    '實習生', '學徒', '工讀生', '中控', '夜班', '服務人員', '營業員', '助手', '檢修', '技工', '半技', '粗工', '物業', '機械技術'
+    '實習生', '學徒', '工讀生', '中控', '夜班', '服務人員', '營業員', '助手', '檢修', '技工', '半技', '粗工', '物業', '機械技術', '組員', '工務助理', '水電技師', '服務員', '銷售員', '外送員', '兼職', '兼職人員', '正職', '領班', 'PT'
 ]
 
 # E7 排除：工安/環安衛人員
@@ -372,30 +383,19 @@ def score_candidate(c, overlay=None):
     work_and_desired = work_text + '\n' + desired
     name_clean = c['name'].replace(' ', '')
 
-    # Overlay 解禁判斷用：BIM 相關擊殺詞（mep-design / space-manager 條件化解禁的對象）
-    bim_related_kill_tokens = ['繪圖員', 'BIM建模員', 'bim建模員', 'BIM工程師', '室內設計', '室內裝修', '建築設計']
+    def _is_bim_unlock(c, work_text, desired, full):
+        # 檢查是否為高科大廠 VIP 人才 (Q4)
+        if overlay.enable_high_tech_vip_unlock:
+            vip_companies = ['漢唐', '帆宣', '泰興', 'Exyte', '易科德', '亞翔', '洋基', '同開', '聖暉']
+            has_vip = any(kw in full for kw in vip_companies)
+            has_bim = any(kw in full.upper() for kw in ['BIM', 'REVIT'])
+            if has_vip and has_bim:
+                return True # 直接無條件解禁
 
-    def _is_bim_unlock(hit_kws):
-        """條件化解禁：僅在 overlay 啟用、命中詞為 BIM 相關、且候選人通過 M1 核心職稱或 M2 產業關鍵字時返回 True。
-
-        space-manager v0.2 額外收緊：
-        - 室內設計：若希望職稱與工作經歷皆顯示純室內設計背景則不解禁。
-        - 解禁仍需工作經歷有 MEP/廠務實質字眼。
-        """
-        if not overlay.unlock_e2_e6_e8_for_engineering:
-            return False
-        if not any(kw in bim_related_kill_tokens for kw in hit_kws):
-            return False
-
-        # space-manager v0.2: 室內設計收緊
-        if overlay.tighten_interior_design_unlock and '室內設計' in hit_kws:
-            if '室內設計' in desired and work_text.count('室內設計') >= 2:
-                return False
-
-        recent_works = '\n'.join(c['work_lines'][:3]) if c['work_lines'] else ""
-        has_core_title = any(kw in recent_works for kw in CORE_TITLE_KEYWORDS)
-        has_company = any(kw in full for kw in COMPANY_KEYWORDS)
-        base_pass = has_core_title or has_company
+        # default 解禁：必須具備至少一項工程 M 條件
+        m1_hit = any(kw in full for kw in ['工程師', '主任', '經理', '專案', '管線', '監工'])
+        m2_hit = any(kw in full for kw in ['機電', '水電', '空調', '廠務', '建設', '營造'])
+        base_pass = m1_hit and m2_hit
 
         # space-manager v0.2: 解禁需要工作經歷有 MEP 實質字眼
         if overlay.require_mep_substance_for_unlock:
@@ -404,11 +404,15 @@ def score_candidate(c, overlay=None):
 
         return base_pass
 
-    # --- 排除條件 ---
+    # E19: 絕對不可挽救的致命防呆 (無條件排除，不適用任何解禁)
+    fatal_kill = [kw for kw in ['倉管', '業助', '組員', '安裝調試員', '服務工程師', '工務助理', '客服人員', '水電技師', '服務員', '銷售員', '外送員', '客服工程師', '技術助理工程師', '助理技術工程師', '資深技術員', '資深助理工程師', '資深技術工程師', '廠務助理工程師', '總務專員', '客服主任', '總務工程師', '園藝', '景觀', 'presales', '系辦助理', '口譯', '機構工程師', '機構設計', '機台', '維運人員', '空軍', '陸軍', '海軍', '國防部', '參謀', '士官', '志願役', '職業軍人'] if kw.lower() in work_and_desired.lower()]
+    if fatal_kill:
+        return 0, [f"排除(E19): 致命防呆不接受解禁={','.join(fatal_kill[:2])}"], True
+
     # E8: 絕對封殺 (無視其他工程師/機電加分字眼)
-    kill_hits = [kw for kw in ABSOLUTE_KILL_KEYWORDS if kw in work_and_desired.lower()]
+    kill_hits = [kw for kw in ABSOLUTE_KILL_KEYWORDS if kw in work_and_desired.lower() and kw not in desired.lower()]
     if kill_hits:
-        if _is_bim_unlock(kill_hits):
+        if _is_bim_unlock(c, work_text, desired, full):
             reasons.append(f"E8條件化解禁({overlay.role_name}): {','.join(kill_hits[:2])}通過 M1/M2 工程門檻")
         else:
             return 0, [f"排除(E8): 絕對不適任={','.join(kill_hits[:2])}"], True
@@ -424,7 +428,7 @@ def score_candidate(c, overlay=None):
     if desired:
         e2_hits = [kw for kw in NON_ENGINEERING_DESIRED if kw in desired]
         if e2_hits:
-            if _is_bim_unlock(e2_hits):
+            if _is_bim_unlock(c, work_text, desired, full):
                 reasons.append(f"E2條件化解禁({overlay.role_name}): {','.join(e2_hits[:2])}通過 M1/M2 工程門檻")
             else:
                 return 0, [f"排除(E2): 希望職稱非工程={desired[:30]}"], True
@@ -434,21 +438,24 @@ def score_candidate(c, overlay=None):
     has_mgmt_or_eng = any(kw in desired + first_work for kw in ['工程師', '主任', '經理', '副理', '課長', '專案', '機電', '氣體'])
     
     # 特例防呆：這些職稱就算有工程師或機電字眼，也不能被救回
-    unsavable_hits = [kw for kw in ['維修工程師', '技術工程師', '助理', '實習', '學徒', '中控', '夜班', '工讀', '助手', '專員', '駐點', '倉管', '倉庫', '器材', '物料', '總務', '行政', '人事', '檢修', '技工', '半技', '粗工', '保全', '駐衛警', '勤務', '物業', '機械技術'] if kw in desired + first_work]
+    unsavable_hits = [kw for kw in ['維修工程師', '技術工程師', '助理', '實習', '學徒', '中控', '夜班', '工讀', '助手', '專員', '駐點', '倉管', '倉庫', '器材', '物料', '總務', '行政', '人事', '檢修', '技工', '半技', '粗工', '保全', '駐衛警', '勤務', '物業', '機械技術', '工務助理', '業助', '組員', '水電技師', '服務員', '銷售員', '外送員', '技術人員', '兼職', '兼職人員', '正職', '領班', 'PT'] if kw in desired + first_work]
     if unsavable_hits:
         has_mgmt_or_eng = False
 
     if low_skill_hits and not has_mgmt_or_eng:
-        if _is_bim_unlock(low_skill_hits):
+        if _is_bim_unlock(c, work_text, desired, full):
             reasons.append(f"E6/E3條件化解禁({overlay.role_name}): {','.join(low_skill_hits[:2])}通過 M1/M2 工程門檻")
         else:
             return 0, [f"排除(E3): 脫離工程專業={','.join(low_skill_hits[:2])}"], True
 
     # E4: 純土建/營造人員無建廠/廠房營造經驗
-    is_pure_civil = (c['group'] == 'G1_土木建築') or any(kw in desired + work_text for kw in ['建築', '營建', '土木', '營造'])
+    is_pure_civil = (c['group'] == 'G1_土木建築') or any(kw in desired + work_text for kw in ['建築', '營建', '土木', '營造', '建設'])
     if is_pure_civil:
         has_factory = any(kw in work_and_desired for kw in ['建廠', '擴廠', '廠務', '無塵室', '統包', 'EPC', '科技廠', '半導體', '面板', '帆宣', '漢唐', '亞翔', '特氣', '管路'])
-        has_mep_role = any(kw in desired + work_text for kw in ['機電', 'BIM', 'MEP', '空調', '消防', '電力', '水處理', '水電'])
+        if overlay.role_name == 'mep-design':
+            has_mep_role = any(kw in (desired + work_text).upper() for kw in ['機電', 'MEP', '空調', '消防', '電力', '水處理', '水電', '廠務', '管線'])
+        else:
+            has_mep_role = any(kw in (desired + work_text).upper() for kw in ['機電', 'BIM', 'MEP', '空調', '消防', '電力', '水處理', '水電', '廠務', '管線'])
         if not (has_factory or has_mep_role):
             return 0, ["排除(E4): 土建/營造無機電建廠經驗"], True
 
@@ -486,16 +493,32 @@ def score_candidate(c, overlay=None):
             return 0, ["排除(E11): 純採購/企劃無機電實務"], True
 
     # E17: 純科技研發/軟體/業務/光電人員排除
-    fatal_rd_software_hits = [kw for kw in ['軟硬體', '軟體', 'SQA', '演算法', 'BIOS', 'IC設計', '晶片', '前端', '後端', '全端', 'App開發', '業務', '光電', '研發', 'RD'] if kw in work_and_desired]
+    fatal_rd_software_hits = [kw for kw in ['軟硬體', '軟體', 'SQA', '演算法', 'BIOS', 'IC設計', '晶片', '前端', '後端', '全端', 'App開發', '業務', '光電', '研發', 'RD', '3d artist'] if kw in work_and_desired.lower()]
     if fatal_rd_software_hits:
-        return 0, ["排除(E17): 純軟體/研發/業務人員"], True
+        # space-manager v0.3: Q1 解禁 BIM 開發者
+        if overlay.enable_bim_developer_unlock:
+            has_bim = any(kw in work_and_desired.upper() for kw in ['BIM', 'REVIT', 'DYNAMO', 'API'])
+            software_roles = ['前端', '後端', '全端', '軟體', 'app', 'developer', '3d artist']
+            has_sw = any(kw in work_and_desired.lower() for kw in software_roles)
+            if has_bim and has_sw:
+                reasons.append(f"E17條件化解禁({overlay.role_name}): BIM 開發者/高階應用人才")
+                fatal_rd_software_hits = [] # bypass
+        if fatal_rd_software_hits:
+            return 0, [f"排除(E17): 純軟體/研發/業務人員({','.join(fatal_rd_software_hits[:2])})"], True
+
+    # E18: 純人資/行政專職防呆 (針對利用希望職稱寫廠務但實際全為HR者)
+    hr_hits = [kw for kw in ['人資', 'HR', '招募', 'Recruiter', 'Talent Acquisition'] if kw in work_and_desired]
+    if hr_hits:
+        has_mep_role = any(kw in work_text for kw in ['機電', '空調', '消防', '電力', '無塵室', '廠務', '建廠', '水處理', '水電', '配管'])
+        if not has_mep_role:
+            return 0, [f"排除(E18): 人資/招募專職({','.join(hr_hits[:2])})"], True
 
     # 特例：楊遠志、邱弘瀚、黃新益 (依使用者 Batch 29 回饋直接封殺)
     if c['name'] in ['楊遠志', '邱弘瀚', '黃新益']:
         return 0, ["排除: 用戶指定無明確建廠/經歷單薄/非工程專精"], True
 
     # E12: 大樓物業/商場維護防呆
-    property_hits = [kw for kw in ['公寓大廈', '物業', '保全', '百貨', '商場', '量販', '社區管理', '管委會', '京站'] if kw in work_and_desired]
+    property_hits = [kw for kw in ['公寓大廈', '物業', '保全', '百貨', '商場', '量販', '社區管理', '管委會', '京站', '微風', '購物中心'] if kw in work_and_desired]
     if property_hits:
         has_factory = any(kw in work_and_desired for kw in ['建廠', '擴廠', '廠務', '無塵室', '統包', '科技廠', '半導體'])
         if not has_factory:
@@ -503,7 +526,7 @@ def score_candidate(c, overlay=None):
 
     # E13: 服務業轉型且工程經歷單薄防呆
     has_thick_work = any(k in work_text for k in ['規劃', '建廠', '新建', '擴廠', '專案', '統包', '無塵室', '廠務', '發包', '圖面', '監造'])
-    non_eng_bg_hits = sum(1 for line in c['work_lines'] if any(kw in line for kw in ['餐廳', '門市', '吧台', '服務人員', '美容', '保全', '店長', '理貨', '餐飲']))
+    non_eng_bg_hits = sum(1 for line in c['work_lines'] if any(kw in line for kw in ['餐廳', '門市', '吧台', '服務人員', '服務員', '銷售員', '外送員', '美容', '保全', '店長', '理貨', '餐飲', '內場', '外場', '司機', '快餐', '專賣店', '飲料', '櫃台', '飯店', '農場', 'PT']))
     eng_job_hits = sum(1 for line in c['work_lines'] if any(kw in line for kw in ['工程', '機電', '廠務', '水電', '空調', '消防']))
     if non_eng_bg_hits >= 2 and eng_job_hits <= 1 and not has_thick_work:
         return 0, ["排除(E13): 服務業轉型且工程經歷單薄"], True
@@ -513,10 +536,18 @@ def score_candidate(c, overlay=None):
     if non_eng_edu and not has_thick_work:
         return 0, ["排除(E14): 非專業科系背景且工程履歷單薄"], True
 
-    # E15: 缺乏核心機電實務且經歷混雜防呆
-    core_mep_hits = [kw for kw in ['空調', '消防', '水處理', '管線', 'BIM', 'MEP', '廠務', '水電', '無塵室', '建廠', '統包'] if kw in work_and_desired]
+    # E15: 缺乏核心機電實務且經歷混雜防呆 (Q3 強化版)
+    core_mep_hits = [kw for kw in ['空調', '消防', '水處理', '管線', 'BIM', 'MEP', '廠務', '水電', '無塵室', '建廠', '統包'] if kw in (work_and_desired).upper()]
+    low_level_jobs = ['操作員', '技術人員', '服務人員', '門市', '餐飲', '保全', '總務', '作業員', '理貨', '美容', '行政', '櫃檯', '專櫃']
+    has_low_jobs = any(kw in work_text for kw in low_level_jobs)
+    
+    # 計算工程經歷行數
+    eng_lines = [l for l in c['work_lines'] if any(k in l for k in ['工程', '機電', '廠務', '設計', 'BIM', 'bim', '空調', '消防', '製圖', '繪圖'])]
+    if has_low_jobs and len(eng_lines) <= 2 and not any(kw in work_and_desired for kw in ['規劃', '建廠', '新建', '擴廠']):
+        return 0, ["排除(E15): 工程經歷過短且夾雜大量非專業經歷"], True
+        
     if not core_mep_hits:
-        if any(kw in work_text for kw in ['操作員', '技術人員', '服務人員', '門市', '餐飲', '保全', '總務', '作業員', '理貨', '美容']):
+        if has_low_jobs:
             return 0, ["排除(E15): 缺乏核心機電實務且經歷混雜"], True
 
     # E16: 機電整合/自動控制/航太等非廠房設施防呆

@@ -6,7 +6,17 @@
       "Bash(\"c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe\" .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS.md)",
       "Bash(cp ANALYSIS.md ANALYSIS_backup.md)",
       "Bash(\"c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe\" .agent/skills/hr-talent-screener/scripts/pipeline_clean.py ANALYSIS.md)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(xargs ls:*)",
+      "Bash(npm --version)",
+      "Bash(c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe:*)",
+      "Bash(firebase --version)",
+      "WebSearch",
+      "Bash(gcloud --version)",
+      "Bash(npm install:*)",
+      "Bash(gcloud version:*)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(npx -y http-server -p 8888 -o)"
     ]
   }
 }
