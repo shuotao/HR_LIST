@@ -132,6 +132,8 @@ Agent 在完成規則更新後，**必須主動**進行以下反思分析：
 ### 步驟 5：結案審閱 `/review`（在 `/merge` 之後執行）
 > **此步驟不在本技能（hr-talent-screener）的 `/filter` 流程中直接執行。**
 > 它發生在使用者完成 `/merge`（PDF → CSV）之後，因為只有看到完整履歷的結構化細節（`HR_Data_Summary.csv`），才能發現 ANALYSIS.md 摘要階段無法看出的落差。
+>
+> **🔁 階段獨立原則（v10.3+ 新增）**：每次 `/review` 必須當作獨立執行——進場第一件事**重讀 `HR_Data_Summary.csv` 與根目錄 PDF 列表**確認當前狀態，不可信任跨對話的上下文記憶或前批殘留檔案（`review_decisions.json` 可能是上一輪遺留的舊版，會被 `apply_review_decisions.py` 的對齊檢查擋下並要求重新產生）。
 
 Agent 基於 `HR_Data_Summary.csv` 執行最終審閱：
 

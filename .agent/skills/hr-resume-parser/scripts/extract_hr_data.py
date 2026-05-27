@@ -49,12 +49,50 @@ def extract_from_md(file_path):
                     name = line.split(age)[0].strip()
                     break
 
-    # 1b. Email
-    for line in lines:
-        m_email = re.search(r'[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}', line)
-        if m_email:
-            email = m_email.group(0).strip()
-            break
+    # 1b. Email — 方案 D + 硬黑名單（2026-05-27 batch #40 反饋）
+    # 起因：李承翰履歷甄試歷程含「轉寄完整履歷給 Charlotte(charlotte.liao@ctci.com)」，
+    # 原本由上而下的 regex 第一個命中即取，導致 CSV Email 欄位被填成中鼎 HR 的 email
+    # 而非候選人本人 email。
+    #
+    # 修法三層防線：
+    # Primary  : 找「E-mail」標籤行，取下一個非空行的 email（104 MD 標準格式）
+    # Fallback : 全文掃但跳過「甄試歷程 / 附件」段（中鼎內部轉發 email 出現處）
+    # 兜底     : 硬黑名單 @ctci.com（中鼎自己 domain，候選人本人 email 絕不可能是此 domain）
+    EMAIL_RE = r'[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}'
+    SKIP_SECTION_HEADERS = ['甄試歷程', '附件']
+    EMAIL_BLACKLIST_DOMAINS = ['@ctci.com']
+
+    # Primary: 錨定「E-mail」標籤
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped == 'E-mail' or stripped.startswith('E-mail'):
+            for j in range(i + 1, min(i + 5, len(lines))):
+                cand_line = lines[j].strip()
+                if not cand_line:
+                    continue
+                m = re.search(EMAIL_RE, cand_line)
+                if m:
+                    cand_email = m.group(0).strip()
+                    if not any(b in cand_email for b in EMAIL_BLACKLIST_DOMAINS):
+                        email = cand_email
+                        break
+            if email:
+                break
+
+    # Fallback: 全文掃 + 跳過 skip sections + 黑名單
+    if not email:
+        in_skip_section = False
+        for line in lines:
+            if any(h in line for h in SKIP_SECTION_HEADERS):
+                in_skip_section = True
+            if in_skip_section:
+                continue
+            m = re.search(EMAIL_RE, line)
+            if m:
+                cand_email = m.group(0).strip()
+                if not any(b in cand_email for b in EMAIL_BLACKLIST_DOMAINS):
+                    email = cand_email
+                    break
 
     # 通用區塊擷取工具：找到 start_kw 所在行，往下收集直到遇到 stop_kws 中任一關鍵字。
     # 若找不到 start_kw，回傳空字串（靜默失敗，不中斷處理）。
@@ -272,9 +310,31 @@ def process_all():
         row = extract_from_md(os.path.join(base_dir, f))
         data.append(row)
 
-    # === 加入三位數序號 ===
+    # === 加入三位數序號（v10.3 修正, 2026-05-27）===
+    # 起因：原邏輯 `for i, row: row.insert(0, f"{i+1:03d}")` 用 enumerate 重編連續序號，
+    # 導致 user 刪 PDF 後 CSV 序號全部移位（如刪 004 後，舊 005 變新 004），
+    # 連帶 review_decisions.json 對應失準、CSV↔PDF 一致性驗證掛掉。
+    #
+    # 新邏輯：以 md 檔名前綴為唯一序號來源（PDF 跳號則 CSV 也跳號，完全跟根目錄對齊）
+    #   - 已有 `^\d{3}_` 前綴的 md → 直接用該序號
+    #   - 無前綴的 md（新加入的人）→ 取「現存序號 max + 1」
+    existing_seqs = []
+    unassigned_indices = []
+    for idx, f in enumerate(md_files):
+        m = re.match(r'^(\d{3})_', f)
+        if m:
+            existing_seqs.append((idx, int(m.group(1))))
+        else:
+            unassigned_indices.append(idx)
+
+    seq_map = {idx: f"{s:03d}" for idx, s in existing_seqs}
+    next_seq = max([s for _, s in existing_seqs], default=0) + 1
+    for idx in unassigned_indices:
+        seq_map[idx] = f"{next_seq:03d}"
+        next_seq += 1
+
     for i, row in enumerate(data):
-        row.insert(0, f"{i+1:03d}")
+        row.insert(0, seq_map[i])
 
     csv_path = os.path.join(base_dir, 'HR_Data_Summary.csv')
     with open(csv_path, 'w', encoding='utf-8-sig', newline='') as csvfile:

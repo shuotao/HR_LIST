@@ -100,6 +100,10 @@ class RoleOverlay:
         self.enable_high_tech_vip_unlock = False       # space-manager v0.3: Q4 解禁頂尖高科 BIM 人才
         self.enable_bim_developer_unlock = False
         self.enable_high_tech_vip_unlock = False
+        # v10.2 新增（2026-05-27 4 人回饋）
+        self.enable_d17_no_mgmt_potential = False  # 年資 ≥3 無管理抬頭且無規劃/整合軌跡 → 扣分
+        self.enable_presales_escape = False        # E19 presales 若前 ≥2 段強相關 → 改 D 扣分而非排除
+        self.enable_e4_global_consult_escape = False  # E4 若履歷含頂級工程顧問 + PCM/專案管理 → 解禁
 
 
 def get_overlay(role_name):
@@ -136,6 +140,10 @@ def get_overlay(role_name):
         overlay.enable_high_tech_vip_unlock = True
         overlay.enable_bim_developer_unlock = True
         overlay.enable_high_tech_vip_unlock = True
+        # v10.2 (2026-05-27 4 人回饋)
+        overlay.enable_d17_no_mgmt_potential = True
+        overlay.enable_presales_escape = True
+        overlay.enable_e4_global_consult_escape = True
     return overlay
 
 
@@ -195,7 +203,19 @@ PREMIUM_COMPANIES = [
     # 高科技 EPC / 半導體廠務競業公司
     '亞翔', '漢唐', '帆宣', '洋基', '信紘科', '擎邦', '同開',
     '千附', '聖暉', '朋億', '互助營造', '瑞助',
+    # 全球頂級工程顧問 (v10.2 新增；2026-05-27 李承翰回饋：WSP/科進栢誠 PCM 經歷未被識別)
+    'AECOM', '科進栢誠', 'WSP', 'Jacobs', 'Arup', 'Arcadis',
+    'Mott MacDonald', 'Buro Happold', '鼎漢',
 ]
+
+# Q5: 中鼎內部轉發信號（v10.2 新增；2026-05-27 李承翰回饋）
+# 條件：履歷甄試歷程含「@ctci.com」email → HR 內部已認可，自動 VIP 解禁
+# 效果：+30 強加分，並豁免 E2/E4/E6/E8/E19 排除
+CTCI_INTERNAL_SIGNAL = '@ctci.com'
+
+# v10.3 (2026-05-27)：實質類關鍵字必須在 work_text 命中（不能被希望職稱單獨觸發）
+# 楊國清回饋：希望職稱寫「國內外建廠」但工作經歷全是工地主任，被希望職稱關鍵字「灌水」入選
+WORK_TEXT_ONLY_KEYWORDS = ['建廠', '擴廠', 'EPC統包', 'EPC建廠']
 
 # 加分條件 N4: 管理職關鍵字 (★★☆)
 MGMT_KEYWORDS = ['主任', '課長', '副理', '經理', '協理', '處長', '總監']
@@ -281,6 +301,22 @@ SKIP_PREFIXES = ('希望工作地', '居住地', '甄試歷程')
 # ============================
 # 解析候選人區塊
 # ============================
+def _back_n_nonblank(lines, anchor_idx, n=4):
+    """從 anchor_idx 往前找第 n 個非空行的索引。
+
+    Why: pipeline_clean.stage1 已壓掉所有空行；但若使用者沒跑 clean 直接餵原始
+    ANALYSIS.md 給 parse_candidates，仍要安全。雙保險：anchor - n 改為「跳空行
+    往前數 n 個非空行」，並在取出 block 後再過濾一次空行確保 block[N] 索引正確。
+    """
+    start = anchor_idx
+    found = 0
+    while start > 0 and found < n:
+        start -= 1
+        if lines[start].strip():
+            found += 1
+    return start
+
+
 def parse_candidates(lines):
     """解析 ANALYSIS.md，將每位候選人封裝為字典。"""
 
@@ -308,9 +344,12 @@ def parse_candidates(lines):
         return g
 
     for idx, id_line_num in enumerate(id_indices):
-        start = max(0, id_line_num - 4)
-        end = max(0, id_indices[idx + 1] - 4) if idx + 1 < len(id_indices) else len(lines)
-        block = lines[start:end]
+        start = _back_n_nonblank(lines, id_line_num, 4)
+        end = _back_n_nonblank(lines, id_indices[idx + 1], 4) if idx + 1 < len(id_indices) else len(lines)
+        raw_block = lines[start:end]
+        # 防禦：壓縮為非空行序列後再用 hardcode 索引，與 pipeline_clean.stage1
+        # 的緊湊化形成雙保險（單跑 parse 也安全）。
+        block = [l for l in raw_block if l.strip()]
 
         name = block[0].strip() if block else ""
         age = block[2].strip() if len(block) > 2 else ""
@@ -408,6 +447,14 @@ def score_candidate(c, overlay=None):
     work_and_desired = work_text + '\n' + desired
     name_clean = c['name'].replace(' ', '')
 
+    # ===== Q5: 中鼎內部轉發 VIP 解禁 (v10.2 新增, 2026-05-27) =====
+    # 履歷甄試歷程含「@ctci.com」email → HR 內部已認可，強訊號
+    # 效果：+30 強加分，並豁免 E2/E4/E6/E8/E19 排除規則
+    ctci_vip = CTCI_INTERNAL_SIGNAL in full
+    if ctci_vip:
+        score += 30
+        reasons.append("Q5 中鼎內部轉發 VIP (+30): HR 已認可, 豁免 E2/E4/E6/E8/E19")
+
     def _is_bim_unlock(c, work_text, desired, full):
         # 檢查是否為高科大廠 VIP 人才 (Q4)
         if overlay.enable_high_tech_vip_unlock:
@@ -441,6 +488,25 @@ def score_candidate(c, overlay=None):
         if has_high_tech_or_epc:
             reasons.append("E19水電技師豁免: 具備高科技廠房/設備工程師或EPC經歷")
             fatal_kill = []
+
+    # v10.2 (2026-05-27): E19 presales escape (space-manager only)
+    # 劉書愛回饋：當前 Presales 但前 ≥2 段強相關（BIM/MEP/營造）→ 改 D 扣分而非排除
+    if overlay.enable_presales_escape and 'presales' in [k.lower() for k in fatal_kill]:
+        strong_prior_kws = list(BIM_TOKENS) + list(MEP_TOKENS) + ['營造', '建設', '建築']
+        strong_prior_count = sum(
+            1 for line in c['work_lines'][1:]  # 排除當前段 (work_lines[0])
+            if any(t in line for t in strong_prior_kws)
+        )
+        if strong_prior_count >= 2:
+            score -= 15
+            reasons.append(f"E19 presales escape (space-manager): 前段 {strong_prior_count} 段強相關，改 D 扣分 (-15)")
+            fatal_kill = [k for k in fatal_kill if k.lower() != 'presales']
+
+    # v10.2: CTCI VIP 豁免 E19
+    if ctci_vip and fatal_kill:
+        reasons.append(f"E19 豁免 (Q5 CTCI VIP): 略過致命防呆 {','.join(fatal_kill[:2])}")
+        fatal_kill = []
+
     if fatal_kill:
         return 0, [f"排除(E19): 致命防呆不接受解禁={','.join(fatal_kill[:2])}"], True
 
@@ -516,7 +582,24 @@ def score_candidate(c, overlay=None):
             has_mep_role = any(kw in (desired + work_text).upper() for kw in ['機電', 'MEP', '空調', '消防', '電力', '水處理', '水電', '廠務', '管線'])
         else:
             has_mep_role = any(kw in (desired + work_text).upper() for kw in ['機電', 'BIM', 'MEP', '空調', '消防', '電力', '水處理', '水電', '廠務', '管線'])
-        if not (has_factory or has_mep_role):
+
+        # v10.2 (2026-05-27): E4 escape - 全球頂級工程顧問 + PCM/專案管理經歷 → 豁免
+        # 李承翰回饋：WSP/科進栢誠 PCM 建築專業經歷被誤判為純土建
+        e4_global_escape = False
+        if overlay.enable_e4_global_consult_escape:
+            global_consults = ['AECOM', '科進栢誠', 'WSP', 'Jacobs', 'Arup', 'Arcadis', 'Mott MacDonald', 'Buro Happold', '鼎漢']
+            has_global = any(kw in full for kw in global_consults)
+            has_pcm = any(kw in work_and_desired for kw in ['PCM', '專案管理', 'Project Management', '專案經理'])
+            if has_global and has_pcm:
+                e4_global_escape = True
+                reasons.append(f"E4 豁免 (v10.2 space-manager): 含全球頂級顧問 + PCM/專案管理經歷")
+
+        # v10.2: CTCI VIP 豁免 E4
+        if ctci_vip:
+            reasons.append("E4 豁免 (Q5 CTCI VIP)")
+        elif e4_global_escape:
+            pass  # 已加 reasons 在上面
+        elif not (has_factory or has_mep_role):
             return 0, ["排除(E4): 土建/營造無機電建廠經驗"], True
 
     # E5b: 環境/環工純採樣人員且無實質 MEP 建廠/設施經驗防呆
@@ -537,7 +620,17 @@ def score_candidate(c, overlay=None):
     # E7: 工安/環安衛人員（非機電工程/土建）
     ehs_hits = [kw for kw in EHS_KEYWORDS if kw in desired or kw in first_work]
     if ehs_hits:
-        # 豁免機制：若工作經歷有知名EPC或對口機電廠務實績，且希望職稱中包含非EHS對口工程師職稱
+        # v10.3 (2026-05-27): 對 space-manager，E7 豁免必須 work_text 含「機電」或 MEP 字眼
+        # 簡瑞辰回饋（環安出身，work_text 全是品管/環工）/ 吳鴻彰回饋（工安出身，work_text 純廠務維護無機電）
+        # 區分：許定鈞（25年機電主任 + WSP）work_text 含「機電」 → 豁免；
+        #       簡瑞辰/吳鴻彰 work_text 無「機電」 → 不豁免直接排除
+        if overlay.role_name == 'space-manager':
+            has_mep_strict = '機電' in work_text or 'MEP' in work_text.upper()
+            if not has_mep_strict:
+                return 0, [f"排除(E7 space-manager): EHS 出身且工作經歷無機電/MEP 實質字眼={','.join(ehs_hits[:2])}"], True
+            # 有機電字眼則仍走 default 豁免流程（不立即 return）
+
+        # default 角色（或 space-manager 通過機電 strict 檢查後）保留既有豁免邏輯
         has_epc = any(kw in full for kw in PREMIUM_COMPANIES + ['中鼎', '漢科', '帆宣', '泰興', '達欣', '潤弘'])
         has_non_ehs_desired = desired and any(kw in desired for kw in ['廠務', '機電', '電機', '電力', '空調', '消防', '水處理', '水電', '工程師', '監造', '品管', '經理', '設備師', '維護'])
         if has_epc or has_non_ehs_desired:
@@ -547,6 +640,20 @@ def score_candidate(c, overlay=None):
                 ehs_hits = []
         if ehs_hits:
             return 0, [f"排除(E7): 工安/環安衛={','.join(ehs_hits[:2])}"], True
+
+    # E33: 希望職稱-工作實質 mismatch 排除 (v10.3, 2026-05-27)
+    # 楊國清回饋：希望職稱寫「國內外建廠/廠務主管」但工作經歷全是工地主任，無實際建廠/廠務經驗
+    # 條件：希望職稱含 mismatch_intent_kws，但 work_text 中既無相同字眼也無 broader MEP/BIM 實質
+    mismatch_intent_kws = ['建廠', '擴廠', '廠務', '空間管理', '空間整合']
+    intent_hits = [kw for kw in mismatch_intent_kws if kw in desired]
+    if intent_hits:
+        has_same_in_work = any(kw in work_text for kw in intent_hits)
+        if not has_same_in_work:
+            broader_substance_kws = ['空調', '消防', '電力', '配電', '給排水', '機電', '無塵室',
+                                      'EPC', '統包', 'BIM', '空間規劃', '空間整合', '監造', '監工']
+            has_broader = any(kw in work_text for kw in broader_substance_kws)
+            if not has_broader:
+                return 0, [f"排除(E33): 希望職稱含{','.join(intent_hits[:2])}但工作經歷無對應實質"], True
 
     # E9: 偏向住宅工程/純建築無建廠
     residential_hits = [kw for kw in ['住宅', '住宅工程', '透天', '別墅'] if kw in work_and_desired]
@@ -594,6 +701,18 @@ def score_candidate(c, overlay=None):
             reasons.append("E17研發豁免: 雖有研發字眼，但近期具備半導體大廠實質工程師經歷")
             if '研發' in fatal_rd_software_hits: fatal_rd_software_hits.remove('研發')
             if 'rd' in fatal_rd_software_hits: fatal_rd_software_hits.remove('rd')
+
+        # v10.2 (2026-05-27): 劉書愛回饋——「研發」keyword 在「文化資產保存與研發中心」
+        # 等機構名稱中為 false positive。若 context 為文化/研究機構名稱且無「研發工程師」
+        # 等明確職稱，豁免。
+        rd_false_positive_contexts = ['文化資產', '研發中心', '研發機構', '保存與研發', '藝術研發', '研發處']
+        if any(ctx in full for ctx in rd_false_positive_contexts):
+            true_rd_titles = ['研發工程師', '研發部', '研發主任', '研發人員', '研發副理', '研發經理']
+            has_true_rd_title = any(t in work_and_desired for t in true_rd_titles)
+            if not has_true_rd_title:
+                reasons.append("E17研發豁免 (v10.2): 「研發」出自文化資產/研發中心等機構名稱 false positive")
+                if '研發' in fatal_rd_software_hits: fatal_rd_software_hits.remove('研發')
+                if 'rd' in fatal_rd_software_hits: fatal_rd_software_hits.remove('rd')
 
     if fatal_rd_software_hits:
         # space-manager v0.3: Q1 解禁 BIM 開發者
@@ -698,7 +817,10 @@ def score_candidate(c, overlay=None):
         reasons.append(f"M1職稱(泛用): {','.join(generic_hits[:2])}")
 
     # --- 必要條件 M2: 產業 ---
-    m2_hits = [kw for kw in COMPANY_KEYWORDS if kw in full]
+    # v10.3 (2026-05-27): WORK_TEXT_ONLY_KEYWORDS 必須在 work_text 命中才算
+    # 楊國清回饋：希望職稱寫「建廠」但工作經歷無實際建廠公司，被 keyword 灌水入選
+    m2_raw = [kw for kw in COMPANY_KEYWORDS if kw in full]
+    m2_hits = [kw for kw in m2_raw if kw not in WORK_TEXT_ONLY_KEYWORDS or kw in work_text]
     if m2_hits:
         score += 10
         reasons.append(f"M2產業命中: {','.join(m2_hits[:3])}")
@@ -760,7 +882,9 @@ def score_candidate(c, overlay=None):
         reasons.append("N7監造經驗")
 
     # N8: 建廠/擴廠 (★★☆)
-    if any(kw in full for kw in ['建廠', '擴廠', '擴建', '新建', 'EPC']):
+    # v10.2 修 bug: 原 '新建' 在「黃志新建築師」中被誤觸（子字串「志新」+「建築」交界產生「新建」）
+    # 移除 '新建' '擴建' 過泛 keyword，改用必須含「廠」字尾的複合詞
+    if any(kw in full for kw in ['建廠', '擴廠', '新建廠', 'EPC統包', 'EPC建廠', 'EPC']):
         score += 5
         reasons.append("N8建廠/擴廠經驗")
 
@@ -913,8 +1037,14 @@ def score_candidate(c, overlay=None):
                     or any(tok in work_and_desired for tok in REGULATION_TOKENS)
                 )
                 if not has_space_or_cross:
-                    score -= 15
-                    reasons.append("D7 BIM-only 降級: BIM 外衣但無工程/空間實質 (-15)")
+                    # v10.2 (2026-05-27): 游旻姍回饋——非本科 + BIM-only + 無實質應加重
+                    is_non_cognate = not any(kw in edu for kw in EDU_KEYWORDS)
+                    penalty = 25 if is_non_cognate else 15
+                    score -= penalty
+                    if is_non_cognate:
+                        reasons.append(f"D7 加重 (v10.2): 非本科學歷 + BIM-only 無工程/空間實質 (-{penalty})")
+                    else:
+                        reasons.append(f"D7 BIM-only 降級: BIM 外衣但無工程/空間實質 (-{penalty})")
             else:
                 score -= 15
                 reasons.append("D7 BIM-only 降級: BIM 外衣但無 MEP/廠務實質 (-15)")
@@ -971,6 +1101,39 @@ def score_candidate(c, overlay=None):
         if len(structure_hits) >= 2 and not has_mep_token and not has_space_token:
             score -= 15
             reasons.append(f"D13 純土建結構: {','.join(structure_hits[:2])} 缺MEP/空間 (-15)")
+
+    # D17: 無管理潛力降級（space-manager overlay, v10.2, 2026-05-27）
+    # 李思穎/游旻姍回饋：年資已累積但職涯全段無管理抬頭，且無「規劃/整合/廠務/監造」
+    # 等往上發展的軌跡字眼 → 視為缺乏管理潛力，扣分
+    # 假抬頭防護：「總監助理」「副主任助理」等 substring 命中但本質為助理 → 不算
+    # 年齡 ≤30 加重（年資累積機會少，更難相信轉型潛力）
+    # PREMIUM_COMPANIES escape：曾在大廠工作過的人不應因「無管理抬頭」被誤殺
+    # （董欣寧 regression case：30歲、達欣+TSMC 經歷但無 mgmt 抬頭，第一輪通過）
+    if overlay.enable_d17_no_mgmt_potential:
+        mgmt_kws = ['主任', '課長', '副理', '經理', '協理', '處長', '總監']
+        has_real_mgmt = False
+        for line in c['work_lines']:
+            for kw in mgmt_kws:
+                if kw in line and '助理' not in line and '助手' not in line:
+                    has_real_mgmt = True
+                    break
+            if has_real_mgmt:
+                break
+        growth_trace_kws = ['規劃', '整合', '廠務', '監造', '監工', '專案', '統包', '建廠']
+        has_growth_trace = any(
+            any(t in line for t in growth_trace_kws) for line in c['work_lines']
+        )
+        total_years_d17 = sum(get_line_years(l) for l in c['work_lines'])
+        has_premium_d17 = any(kw in full for kw in PREMIUM_COMPANIES)
+        if total_years_d17 >= 3 and not has_real_mgmt and not has_growth_trace and not has_premium_d17:
+            penalty = 25
+            age_match_d17 = re.search(r'(\d+)', c['age'])
+            if age_match_d17 and int(age_match_d17.group(1)) <= 30:
+                penalty = 35
+            score -= penalty
+            reasons.append(
+                f"D17 無管理潛力 (space-manager): 年資 {total_years_d17:.1f}年全段無管理抬頭且無規劃/整合/廠務/監造軌跡且無大廠經歷 (-{penalty})"
+            )
 
     return score, reasons, False
 

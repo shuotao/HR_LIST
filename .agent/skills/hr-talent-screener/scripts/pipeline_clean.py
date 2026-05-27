@@ -88,10 +88,14 @@ def stage1_remove_noise(lines):
     content = content.replace(menu_block, "")
     removed_count += occurrences * len(menu_block_lines)
 
-    # 清除連續三行以上的空行
-    content = re.sub(r'\n{3,}', '\n\n', content)
+    # 移除所有空行（候選人 block 內部不應有空行）
+    # Why: 104 markdown 匯出在每行間插入空行，會讓 stage2/3 與 parse_candidates
+    # 的「代碼行 - 4」偏移落到年齡而非姓名（曾於 2026-05-27 整批 85 人全歸 G3、
+    # 7 位通過名單姓名顯示為「29歲」即此 bug）。stage3 重組時會自行加回結構性
+    # 空行，所以這裡放心全部壓掉。
+    non_blank_lines = [line for line in content.split('\n') if line.strip()]
 
-    return content.split("\n"), removed_count
+    return non_blank_lines, removed_count
 
 
 # ============================
