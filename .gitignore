@@ -5,9 +5,15 @@
 !人才候選計畫.md
 !.agent/skills/**/SKILL.md
 !.agent/skills/**/references/*.md
+!.agent/skills/**/references/role_overlays/*.md
 !.claude/commands/*.md
 HR_Data_Summary.csv
 .agent/skills/**/references/historical_selections.csv
 __pycache__/
 .pytest_cache/
 *.pyc
+
+# 臨時除錯/檢視產物——CLAUDE.md 第 5/7 條明文禁止，
+# 此目錄保留為 .gitignore 兼安全閥；正式工具一律放入 .agent/skills/<skill>/scripts/。
+scratch/
+review_decisions.json

@@ -1,4 +1,17 @@
 {
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe\" .claude/hooks/block_throwaway_scripts.py"
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       "Bash(c:Users01102088Desktoppython-3.14.2-embed-amd64python.exe -c \":*)",
@@ -16,7 +29,9 @@
       "Bash(npm install:*)",
       "Bash(gcloud version:*)",
       "Bash(echo \"EXIT: $?\")",
-      "Bash(npx -y http-server -p 8888 -o)"
+      "Bash(npx -y http-server -p 8888 -o)",
+      "Bash(rm -f check.py fix_docs.py sample.py review_prep.py test_screener.py update_logs.py update_review.py verify_pdf.py write_review.py write_review_space.py out.txt temp.txt review_input.txt)",
+      "Bash(ls *.py *.txt)"
     ]
   }
 }

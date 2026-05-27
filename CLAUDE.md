@@ -19,7 +19,11 @@
 
 本專案為「104 履歷自動化解析與人才篩選系統」，用於協助 HR 從 104 人力銀行的大量候選人中，快速篩選出符合中鼎工程系統部多角色職缺的面試人選。
 
-**從 v9.0 起採用多角色 overlay 機制**：同一條 4 步驟流程（`/filter` → `/merge` → `/improve` → `/review`）以 `--role` 參數分流支援 `default`（廠務/一般 MEP）/ `mep-design`（MEP 設計）/ `space-manager`（空間管理）三種角色。詳見下方「多角色 overlay 機制」章節。
+**v9.2 起為雙角色架構**：同一條 4 步驟流程（`/filter` → `/merge` → `/improve` → `/review`）以 `--role` 參數分流支援 **兩種**角色：
+- `default` = **MEP**（廠務 / 一般 MEP / MEP 設計合一；BIM 為基礎工具，做廣與做深皆涵蓋）
+- `space-manager` = **空間管理工程師**（跨系統整合、法規理解）
+
+> **重要架構紀錄**：本專案歷史上從未分為 3 個角色。v9.0~v9.1 過渡期短暫拆分為 `default`/`mep-design`/`space-manager` 三類為錯誤分流，v9.2 已合併修正回原始 2 角色概念。`mep-design` 保留為 deprecated alias 自動 fallback 至 `default`，僅為向後相容。
 
 ### 業務流程（必須理解的上下游關係）
 
@@ -77,18 +81,21 @@ Step 4: /review — 結案：基於 CSV 全面審閱、落差確認、精煉規�
 - **腳本**：
   - `scripts/pipeline_clean.py` — 三階段清洗（Stage 1: 雜訊移除, Stage 2: 代碼去重, Stage 3: 學歷分類排序）
   - `scripts/screen_candidates.py` — 評分篩選引擎（雙層 M1 關鍵字, M2 產業比對, M3 經歷數, N1-N17 加分, E1-E17 排除, D1-D5 動態扣分, 門檻=20分）
+  - `scripts/generate_review_decisions.py` — /review 自動產生 `review_decisions.json`（讀 CSV + 對應 .md 重跑 score_candidate，支援 `--role`）
+  - `scripts/apply_review_decisions.py` — /review 把判決寫入 CSV 並驗證 CSV↔PDF 一致性
   - `scripts/pick_candidates_util.py` — 輔助工具
 
 ### 技能二：hr-resume-parser（履歷解析）— 對應 `/merge`
 - **輸入**：HR 從 104 下載的個別候選人 PDF 履歷（`*.pdf`）
 - **處理**：PDF → Markdown → 8 大欄位擷取 + 防幻覺驗證
-- **產出**：`HR_Data_Summary.csv`（utf-8-sig 編碼，初始 9 欄；經 /review 後擴充為 11 欄）
-- **CSV 欄位順序**：序號, 姓名, 年紀, 語文能力, 學歷, 近期工作, 近期工作內容, **審閱結果建議**, 總年資, 前二次任職公司, **審閱排除理由簡述**
+- **產出**：`HR_Data_Summary.csv`（utf-8-sig 編碼，初始 10 欄；經 /review 後擴充為 12 欄）
+- **CSV 欄位順序**：序號, 姓名, 年紀, Email, 語文能力, 學歷, 近期工作, 近期工作內容, **審閱結果建議**, 總年資, 前二次任職公司, **審閱排除理由簡述**
 - **SKILL 文件**：`.agent/skills/hr-resume-parser/SKILL.md`
 - **腳本**：
   - `scripts/convert_pdfs.py` — PDF 轉 Markdown（使用 MarkItDown 函式庫）
   - `scripts/extract_hr_data.py` — Markdown 擷取欄位，產出 CSV（含 NFKC 正規化、自動防幻覺抽檢 15 組、序號編排、改名驗證）
-- **QAQC**：腳本自動抽檢 15 組 + Agent 必須另外手動抽驗 15 組（比對原始 PDF，非 .md）
+  - `scripts/verify_extraction.py` — 防幻覺手動抽驗（直接讀 PDF 原始檔比對 CSV，預設 15 組，支援指定姓名清單）
+- **QAQC**：腳本自動抽檢 15 組 + 必須執行 `verify_extraction.py` 另抽 15 組比對原始 PDF（非 .md）
 
 ### 疊代學習 — 對應 `/improve`
 - **輸入**：`HR_Data_Summary.csv`（已確認的選人結果）或使用者的漏選/誤選回饋
@@ -102,7 +109,7 @@ Step 4: /review — 結案：基於 CSV 全面審閱、落差確認、精煉規�
 - **處理**：地毯式逐人掃描 → 識別不適任/降級/儲備 → 落差分析 → 使用者確認
 - **產出**：
   - CSV 新增「審閱結果建議」欄（總年資之前）+ 「審閱排除理由簡述」欄（末欄）
-  - **僅在 CSV 內標註分類結果（正式/排除/降級/儲備），不搬移任何 PDF/MD 檔案**
+  - **僅在 CSV 內標註分類結果（正式候選 / 排除 / 降級觀察 / 碩士儲備），不搬移任何 PDF/MD 檔案**
   - 所有候選人的 PDF/MD 一律保留在專案根目錄，不建立 excluded/ downgraded/ reserve/ 子資料夾
 - **強制驗證（/review 結束前必須執行）**：
   - 逐筆比對 CSV 序號與根目錄 PDF 檔名，確保每一筆 CSV 記錄都能找到對應的 `{序號}_{姓名}.pdf`
@@ -124,66 +131,93 @@ c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe
 
 ### /filter
 ```bash
-# default 模式（既有 v8.13 行為）
+# 三階段清洗（與角色無關，永遠先跑這個）
 "c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/pipeline_clean.py ANALYSIS.md
+
+# default = MEP 角色（廠務 + MEP 設計合一，預設）
 "c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS.md
 
-# mep-design 模式（用 BIM 做機電設計）
-"c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS_BIM.md --role=mep-design
+# space-manager（空間管理工程師：跨系統整合 + 法規理解）
+"c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS.md --role=space-manager
 
-# space-manager 模式（用 BIM 做空間整合）
-"c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS_BIM.md --role=space-manager
+# （deprecated）mep-design 為 v9.0~v9.1 過渡名稱，v9.2 後自動 fallback 至 default
+# "c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS.md --role=mep-design
 ```
+
+> **輸入檔統一為 `ANALYSIS.md`**（單一來源原則）。HR 視該批次要找哪個角色，僅切換 `--role` 參數，不需要為每個角色另存一份 ANALYSIS 檔。
 
 ### /merge
 ```bash
 # 與角色無關
 "c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-resume-parser/scripts/convert_pdfs.py
 "c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-resume-parser/scripts/extract_hr_data.py
+
+# QAQC 手動抽驗（從 CSV 隨機抽 15 筆比對 PDF 原始檔）
+"c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-resume-parser/scripts/verify_extraction.py
 ```
 
 ### /improve [--role=<role>]
-手動流程：分析 HR 回饋 → 更新規則（default 寫主規則檔；其他角色寫 `role_overlays/<role>.md`）+ `screen_candidates.py` → 追加 `iteration_log.md`（所有角色共寫）+ `historical_selections.csv`（含「角色」欄）
+手動流程：分析 HR 回饋 → 更新規則（default 寫主規則檔 + `role_overlays/default.md`；space-manager 寫 `role_overlays/space-manager.md`）+ `screen_candidates.py` → 追加 `iteration_log.md` + `historical_selections.csv`（含「角色」欄）
 
 ### /review [--role=<role>]
-手動流程：地毯式掃描 CSV（用對應 role 的評分維度）→ 標註分類 → 驗證 CSV↔PDF 一致性 → 反饋規則缺口至對應 role overlay → 追加日誌
+半自動流程（**所有步驟必須使用官方腳本，嚴禁自寫一次性 .py**）：
+
+```bash
+# Step 1：自動產生 review_decisions.json（讀 CSV + 對應 .md 重跑 score_candidate）
+"c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/generate_review_decisions.py --role=default
+
+# Step 2：Agent 視需要人工微調 review_decisions.json（合法 result 限 正式候選 / 排除 / 降級觀察 / 碩士儲備）
+
+# Step 3：寫入 CSV 並執行 CSV↔PDF 強制驗證
+"c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/apply_review_decisions.py review_decisions.json
+
+# Step 4：反饋規則缺口至對應 role overlay → 追加 iteration_log.md
+```
+
+`review_decisions.json` 格式：
+```json
+{"role": "default", "decisions": {"001": {"result": "正式候選", "reason": ""}, ...}}
+```
+
+> **嚴禁**為 /review 自行撰寫一次性腳本以 hardcode dict 修改 CSV，違反唯一腳本原則。所有審閱結果一律走 `generate_review_decisions.py` → `review_decisions.json` → `apply_review_decisions.py` 此單一通道。
 
 ---
 
-## 多角色 Overlay 機制（v9.0 新增）
+## 雙角色 Overlay 機制（v9.2 修正回原始架構）
 
-> **核心架構洞察**：BIM 是組織級的基礎工具，不是某職務的專業。同部門多角色互相支援、知識交流，所以系統採用「同 pipeline 內 overlay 分流」而非「fork 成獨立 pipeline」。
+> **架構紀錄**：本專案歷史上始終只有 2 個角色，v9.0~v9.1 過渡期錯誤拆分為 3 類，v9.2 已修正合併。
+>
+> **核心架構洞察**：BIM 是組織級的基礎工具，不是某職務的專業。MEP 工程師需要做廣（廠務統合）也做深（系統設計），這在中鼎是同一個職務，所以 `default` 角色已涵蓋兩種工作風格。
 
 ### Commons 與 Overlay 的劃分原則
 
-**Commons（所有角色共用）**——寫在主規則檔：
+**Commons（兩角色共用）**——寫在主規則檔 `screening_rules.md`：
 - M1-M3 必要條件（保證候選人先有工程底）
-- CSV 欄位結構（11 欄）
+- E19 致命防呆 / E20a 零經歷防呆 / E25 在學中無台灣公司 / D6b 短期跳槽防呆
+- CSV 欄位結構（10/12 欄含 Email）
 - 三階段清洗、PDF→Markdown→欄位擷取
 
 **Overlay（角色專屬）**——寫在 `role_overlays/<role>.md`：
-- N 條件權重調整（N6 升、N1 降等）
-- 新增 N 條件（N18 BIM × MEP 共現、N19 空間/法規、N20 跨系統整合）
-- E 條件條件化解禁（E2/E6/E8 在工程門檻通過時解禁）
-- 新增 D 條件（D7 BIM-only 降級）
+- `default` (MEP)：N6 BIM 獨立計分、N18 BIM × MEP 共現、E22 零 MEP 信號、E23 純結構、E24 軌跡偏離、E26-E29 BIM/跳槽/繪圖防呆、D7 BIM-only、D12 純建模
+- `space-manager`：上述 default 所有規則 + N19 空間/法規、N20 跨系統、D11 BIM 講師、D13 純土建結構、D14 傳統基層、Q1-Q4 VIP 解禁
 - 評分維度權重翻轉（`bim_scorer.py`）
 
 ### 角色清單
 
 | Role 代碼 | 中文名 | 主任務 | 風格 |
 |-----------|--------|--------|------|
-| `default` | 廠務 / 一般 MEP（既有） | 廠務、施工、維運、機電監造 | （既有 v8.13） |
-| `mep-design` | MEP 設計工程師 | 用 BIM 做機電系統設計 | **做深** |
-| `space-manager` | 空間管理工程師 | 用 BIM 做空間整合、規範理解 | **做廣** |
+| `default` | **MEP** 工程師（廠務 / 機電設計合一） | 廠務、施工、維運、機電監造、設計圖整合 | **做廣 + 做深** |
+| `space-manager` | 空間管理工程師 | 跨系統空間整合、法規理解 | **做廣為主** |
+| ~~`mep-design`~~ | （deprecated alias） | v9.0~v9.1 暫用名，自動 fallback 至 `default` | — |
 
 ### 新增角色的 SOP
 
 未來若要新增角色（如 `commissioning`、`energy-specialist`）：
 
-1. 在 `role_overlays/` 新增 `<role-name>.md`，遵循既有檔案結構（角色定義 / Commons 繼承 / N 條件 overlay / E 條件 overlay / D 條件 overlay / 評分維度 / 樣本特徵）
+1. 在 `role_overlays/` 新增 `<role-name>.md`，遵循既有檔案結構
 2. 在 `screen_candidates.py` 的 `SUPPORTED_ROLES` 與 `get_overlay()` 新增對應 entry
 3. 在 `bim_scorer.py` 的 `ROLE_WEIGHTS` 新增對應權重 dict
-4. 跑既有 ANALYSIS.md（不帶 `--role`）byte-for-byte 驗證 default 行為未變
+4. 跑既有 ANALYSIS.md（不帶 `--role`）驗證 default 行為未變
 5. 跑該角色的真實候選池驗證 overlay 區分力
 6. 同步更新 `README.md` 與本檔案
 
@@ -248,8 +282,25 @@ c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe
 
 ### 5. 唯一腳本原則 (Single Source of Scripts)
 - 只能使用各技能 `scripts/` 目錄內的官方腳本。
-- 嚴禁在專案目錄下另建任何臨時腳本。
+- 嚴禁在專案目錄下另建任何臨時腳本（包含 `scratch/`、根目錄裸 `.py`、`tmp_*.py` 等任何形式）。
 - 若需要修改腳本邏輯，必須修改官方腳本本身並向使用者說明變更內容。
+- **若發現規範要求 Agent 做某動作但缺對應官方工具（工具缺口）**：必須立即停下，向使用者報告缺口、提議升格為官方腳本，而非自行在 `scratch/` 寫一次性 .py 繞過。歷史上 30 個 scratch 檔即源於此問題，已於 2026-05-27 整治。
+
+### 5a. 臨時檢視 / 除錯一律使用內建工具 (No Throwaway Scripts)
+- **禁止場景**：所有「我想看一下 XX」「我想 grep YY」「我想抽驗 ZZ」的瞬間需求，**不得**寫 `.py` 檔案執行。
+- **替代方案**：
+  - 看檔案內容 → `Read` tool
+  - 搜尋字串 / pattern → `Grep` tool
+  - 跑一行 Python / git / 系統指令 → `Bash` tool 的 one-liner（如 `python -c "..."`、`git log -- path`）
+  - 跑多步驟分析 → 同樣用 `Bash` 串 `&&`，**不落地成 `.py` 檔**
+- **唯一例外**：若同一個檢視邏輯**未來會重複使用 3 次以上**，才應升格為官方腳本放入對應 skill 的 `scripts/` 目錄，並更新本文件「指令速查」段落。
+
+### 5b. 工具缺口回報機制 (Tool Gap Escalation)
+- 當執行 SOP 中發現「規範要 Agent 做某件事，但沒有對應官方腳本」時，Agent 必須：
+  1. 中止任務（觸發 Halt on Error 原則）。
+  2. 向使用者報告：缺口位置、為何需要工具、建議的升格路徑（新腳本檔名 + 放置位置 + 參數設計）。
+  3. 取得使用者確認後，將腳本建立於正式 `scripts/` 目錄，並同步更新 CLAUDE.md 指令速查與本檔的工具清單。
+- **嚴禁**先在 scratch/ 寫了再說。一次破例就會繁殖。
 
 ### 6. 唯一憲法原則 (Single Constitution)
 - **本文件 (CLAUDE.md) 為專案唯一執行守則。**

@@ -41,13 +41,21 @@ c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe scripts/pipeline_
 1. 解析每位候選人的完整資料區塊（姓名、年齡、學歷、希望職稱、工作經歷）。
 2. 依據 `references/screening_rules.md` 中的規則進行評分：
    - 必要條件 (M1-M3)：至少命中一項才納入候選池
-   - 加分條件 (N1-N12)：累計加分
-   - 排除條件 (E1-E3)：命中任一項即排除
+   - 加分條件 (N1-N17；default/space-manager 啟用 N18；space-manager 額外啟用 N19-N20)：累計加分
+   - 排除條件 (E1-E18 全 role 通用；default 啟用 E20b/c/d, E21-E24, E26-E29；E19/E20a/E25 全 role 通用)：命中任一項即排除
+   - 動態調整 (D1-D6, D6b, D15 全 role；default/space-manager 啟用 D7、D12；space-manager 額外啟用 D11/D13/D14)
 3. 輸出候選人姓名一覽表與各人的命中理由摘要。
 
-**執行指令**：
+**執行指令**（雙角色架構，輸入檔統一為 `ANALYSIS.md`）：
 ```
-c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe scripts/screen_candidates.py <ANALYSIS.md路徑>
+# default = MEP 角色（廠務 + MEP 設計合一，預設）
+c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe scripts/screen_candidates.py ANALYSIS.md
+
+# space-manager（空間管理工程師：跨系統整合 + 法規理解）
+c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe scripts/screen_candidates.py ANALYSIS.md --role=space-manager
+
+# （deprecated）mep-design 為 v9.0~v9.1 過渡名稱，v9.2 起自動 fallback 至 default
+# c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe scripts/screen_candidates.py ANALYSIS.md --role=mep-design
 ```
 
 ### 步驟 3：結果呈現與確認
@@ -133,19 +141,32 @@ Agent 基於 `HR_Data_Summary.csv` 執行最終審閱：
 2. **執行落差分析報告**：使用步驟 4.3 的格式，基於 CSV 細節產出更精確的落差分析
 3. **向使用者呈現問題選項**：讓使用者確認是否需要調整規則
 4. **精煉規則**：根據使用者回覆，更新 screening_rules.md 與 screen_candidates.py
-5. **CSV 欄位新增**：在 `HR_Data_Summary.csv` 中插入兩個新欄位：
-   - 「**審閱結果建議**」— 放在「總年資」之前，值為：`正式候選` / `排除` / `降級觀察` / `碩士儲備`
-   - 「**審閱排除理由簡述**」— 放在「前二次任職公司」之後（末欄），簡述排除/降級原因（正式候選者留空）
-6. **PDF/MD 檔案分流**：依審閱結果將對應的 PDF 與 MD 檔案搬移至子資料夾：
-   - `excluded/` — 確認排除的候選人
-   - `downgraded/` — 降級觀察的候選人
-   - `reserve/` — 碩士儲備的候選人
-   - 根目錄僅保留正式候選人的 PDF/MD 檔案
-7. **呈現本次任務摘要**：
+5. **CSV 欄位新增（CSV 為 10 欄初始 → 12 欄結案，由官方腳本落地）**：
+   Agent 將審閱結果整理為 `review_decisions.json`（格式如下），然後執行官方腳本 `scripts/apply_review_decisions.py` 將判決寫入 `HR_Data_Summary.csv` 並執行 CSV↔PDF 驗證。**嚴禁自行撰寫一次性腳本以 hardcode dict 方式直接修改 CSV**（違反 CLAUDE.md 唯一腳本原則）。
+   - 「**審閱結果建議**」— 由腳本插在「總年資」之前，值為：`正式候選` / `排除` / `降級觀察` / `碩士儲備`
+   - 「**審閱排除理由簡述**」— 由腳本追加在末欄，正式候選者自動留空
+   - **`review_decisions.json` 格式**：
+     ```json
+     {
+       "role": "default",
+       "decisions": {
+         "001": {"result": "正式候選", "reason": ""},
+         "002": {"result": "排除",     "reason": "E12 純物業..."}
+       }
+     }
+     ```
+   - **執行指令**：
+     ```
+     c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe scripts/apply_review_decisions.py review_decisions.json
+     ```
+   - 腳本具備冪等性（可重跑），合法 result 值僅限上述四種，任何越權值會中止執行。
+6. **強制驗證 CSV ↔ PDF 一致性**（由 `apply_review_decisions.py` 自動執行）：逐筆比對 CSV 序號與根目錄 PDF 檔名 `{序號}_{姓名}.pdf`，任一筆不一致即立即中止。**所有 PDF/MD 一律保留在根目錄**，**禁止建立 excluded/ / downgraded/ / reserve/ 子資料夾**，分類結果僅記錄於 CSV 的「審閱結果建議」欄位中。
+7. **反饋規則缺口**：審閱中發現的「漏網之魚」（應在 /filter 階段就被排除但未被攔截）必須回頭分析其特徵，更新 `screening_rules.md`（default）或 `role_overlays/<role>.md`（overlay）與 `screen_candidates.py`。
+8. **呈現本次任務摘要**：
    - 原始候選人數 → 最終入選人數
    - 本次規則變更摘要
    - 累計規則版本
-8. **正式結案**：使用者確認後，本次找人任務完成，規則已沉澱為下一次 `/filter` 的養分
+9. **正式結案**：使用者確認後，本次找人任務完成，規則已沉澱為下一次 `/filter` 的養分
 
 > ⚠️ 這是一個**逐次疊代增加準度**的過程。每次執行，人才候選計畫都會變得更精準。
 

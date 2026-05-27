@@ -2,7 +2,11 @@
 
 專為人資主管與徵才團隊設計：從 104 人力銀行的大量候選人摘要中篩選出目標人選，再將其完整 PDF 履歷轉為結構化資料，並透過疊代學習持續提升篩選精準度。
 
-**從 v9.0 起支援多角色 overlay**：同一條 4 步驟流程可透過 `--role` 參數套用 `default`（廠務/一般 MEP）/ `mep-design`（MEP 設計）/ `space-manager`（空間管理）三種角色規則。詳見 [docs/ROLES.md](docs/ROLES.md) 與下方「角色與哲學」章節。
+**v9.2 起為雙角色架構**：本專案歷史上始終只有 2 個角色——v9.0~v9.1 過渡期錯誤拆分為 3 類，v9.2 修正合併。同一條 4 步驟流程可透過 `--role` 參數套用：
+- `default` = **MEP**（廠務 + MEP 設計合一）
+- `space-manager` = **空間管理**
+
+各角色規格詳見 [`.agent/skills/hr-talent-screener/references/role_overlays/`](.agent/skills/hr-talent-screener/references/role_overlays/) 與下方「角色與哲學」章節。
 
 ---
 
@@ -27,39 +31,39 @@
   Step 3: /merge ─── 合併：PDF → Markdown → 結構化 CSV（角色無關）
         │
         ▼
-   HR_Data_Summary.csv（完整履歷細節，9 欄）
+   HR_Data_Summary.csv（完整履歷細節，10 欄）
         │
   Step 4: /review [--role=<role>] ── 結案：基於 CSV 全面審閱 + 反饋精煉規則
-        │              → CSV 新增「審閱結果建議」+「審閱排除理由簡述」（11 欄）
+        │              → Agent 產出 review_decisions.json → 跑 apply_review_decisions.py
+        │              → CSV 新增「審閱結果建議」+「審閱排除理由簡述」（12 欄）
         │              → 僅在 CSV 內標註，不搬移任何 PDF/MD 檔案
-        │              → 逐筆驗證 CSV 序號 ↔ PDF 檔名一致性
+        │              → 腳本自動逐筆驗證 CSV 序號 ↔ PDF 檔名一致性
         │              → 審閱發現的漏網之魚反饋回對應 role overlay
         ▼
    下一次 /filter 更精準
 ```
 
 **支援的角色（`--role` 值）：**
-- `default`（不帶 `--role`）：廠務 / 一般 MEP 工程師（既有 v8.13 行為）
-- `mep-design`：MEP 設計工程師（用 BIM 做深，單系統設計）
-- `space-manager`：空間管理工程師（用 BIM 做廣，跨系統整合 + 法規理解）
+- `default`（不帶 `--role`，預設）：**MEP** 工程師——廠務 / MEP 設計合一，做廣 + 做深
+- `space-manager`：空間管理工程師（跨系統整合 + 法規理解）
+- ~~`mep-design`~~：v9.0~v9.1 過渡名稱，v9.2 起為 deprecated alias 自動 fallback 至 `default`
 
 ---
 
-## 角色與哲學（v9.0 新增）
+## 角色與哲學（v9.2 修正回原始架構）
 
-> **核心觀點**：「BIM 是外衣，工程深度才是骨幹。BIM 技術會逐漸被組織變成 MCP 的基礎使用工具。」
+> **核心觀點**：「BIM 是外衣，工程深度才是骨幹。BIM 技術會逐漸被組織變成基礎使用工具。」
 
-中鼎工程系統部的人才需求不是「找 BIM 工程師」這麼簡單。**同部門有多個互相支援的角色，BIM 是組織級的基礎工具，不是某職務的專業**：
+中鼎工程系統部的 MEP 工程師需求不是切成多個獨立物種。**廠務、機電設計、施工監造是同一個職務的不同面向**——同部門互相支援、知識交流：
 
-| 角色 | 用 BIM 做什麼 | 風格 |
-|------|---------------|------|
-| **MEP（機電設計）** | 用 BIM 做機電系統設計 | **做深** — 單系統的設計品質 |
-| **Space Manager（空間管理）** | 透過模型做空間整合、規範理解 | **做廣** — 跨系統的整合協調 |
-| **廠務 / 一般 MEP**（既有） | 廠務、施工、維運、監造 | （既有職缺主軸） |
+| 角色 | 涵蓋工作 | 風格 |
+|------|---------|------|
+| **MEP（`default`）** | 廠務 + 機電系統設計 + 監造 + 施工管理 + BIM 整合 | **做廣 + 做深合一** |
+| **Space Manager（`space-manager`）** | 跨系統空間整合、法規理解 | **做廣為主** |
 
-**這就是為什麼採用「同系統 overlay 分流」、不 fork 成獨立 pipeline**——保留同部門知識交流的架構哲學，避免 BIM 被切成獨立物種。
+**架構紀錄**：v9.0~v9.1 曾誤將 default（廠務/一般 MEP）與 mep-design（MEP 設計）拆為獨立角色，v9.2 已合併修正——這兩種工作風格在中鼎屬同一職務，分開反而違反「同部門知識交流」的架構哲學。
 
-每個角色的詳細規格在 `.agent/skills/hr-talent-screener/references/role_overlays/<role>.md`。HR 視角的角色說明在 `docs/ROLES.md`。
+每個角色的詳細規格在 `.agent/skills/hr-talent-screener/references/role_overlays/<role>.md`（含 N/E/D 條件 overlay、評分維度權重、樣本特徵）。
 
 ---
 
@@ -73,19 +77,19 @@
 # 三階段清洗（與角色無關，所有模式共用）
 python scripts/pipeline_clean.py ANALYSIS.md
 
-# default 模式：廠務 / 一般 MEP（既有 v8.13 行為）
+# default = MEP 角色（廠務 + MEP 設計合一，預設）
 python scripts/screen_candidates.py ANALYSIS.md
 
-# mep-design 模式：MEP 設計工程師（用 BIM 做深）
-python scripts/screen_candidates.py ANALYSIS_BIM.md --role=mep-design
+# space-manager（空間管理：跨系統整合 + 法規理解）
+python scripts/screen_candidates.py ANALYSIS.md --role=space-manager
 
-# space-manager 模式：空間管理工程師（用 BIM 做廣）
-python scripts/screen_candidates.py ANALYSIS_BIM.md --role=space-manager
+# （deprecated）mep-design v9.0~v9.1 過渡名稱，v9.2 後自動 fallback 至 default
+# python scripts/screen_candidates.py ANALYSIS.md --role=mep-design
 ```
 
-**多角色 overlay 對 N/E/D 規則的影響**：
-- `mep-design`：N6 BIM 升 ★★★ 獨立計分、新增 N18 BIM × MEP 共現、E2/E6/E8 條件化解禁、新增 D7 BIM-only 降級
-- `space-manager`：上述全包，再加 N19 空間/法規、N20 跨系統整合；學歷與管理權重微降
+**角色 overlay 對 N/E/D 規則的影響**：
+- `default` (MEP)：N6 BIM 獨立計分 +12、N18 BIM × MEP 共現、E22 零 MEP 信號排除、E23 純結構排除、E24 軌跡偏離、E26-E29 BIM/跳槽/繪圖防呆、D7 BIM-only 降級、D12 純建模降級
+- `space-manager`：上述全包，再加 N19 空間/法規、N20 跨系統整合、D11 BIM 講師、D13 純土建結構、D14 傳統基層、Q1-Q4 VIP 解禁；學歷與管理權重微降
 
 **三階段清洗：**
 1. 移除 104 系統雜訊（版權宣告、選單、公告等）
@@ -132,7 +136,7 @@ python scripts/convert_pdfs.py        # PDF → Markdown
 python scripts/extract_hr_data.py     # Markdown → CSV（含自動防幻覺抽檢 + 序號編排）
 ```
 
-**擷取欄位（9 欄）：** 序號、姓名、年紀、語文能力、學歷、近期工作、近期工作內容、總年資、前二次任職公司
+**擷取欄位（10 欄）：** 序號、姓名、年紀、Email、語文能力、學歷、近期工作、近期工作內容、總年資、前二次任職公司
 
 **範例結果（個資已模糊化）：**
 
@@ -149,10 +153,16 @@ python scripts/extract_hr_data.py     # Markdown → CSV（含自動防幻覺抽
 
 **處理流程：**
 1. 地毯式逐人掃描 CSV 中每位候選人的完整履歷資訊
-2. 依據建廠/廠務/機電相關程度，將每人標記為：正式 / 排除 / 降級 / 儲備
-3. CSV 新增「審閱結果建議」欄（總年資之前）+「審閱排除理由簡述」欄（末欄），擴充為 11 欄
-4. **僅在 CSV 內標註，不搬移任何 PDF/MD 檔案，不建立子資料夾**
-5. **強制驗證**：逐筆比對 CSV 序號與根目錄 PDF 檔名 `{序號}_{姓名}.pdf`，全部一致才可結案
+2. 依據建廠/廠務/機電相關程度，將每人標記為：**正式候選 / 排除 / 降級觀察 / 碩士儲備**
+3. Agent 將判決整理為 `review_decisions.json`（格式：`{"role": "...", "decisions": {"001": {"result": "正式候選", "reason": ""}, ...}}`）
+4. 跑官方腳本將判決寫入 CSV（新增「審閱結果建議」欄於總年資之前 + 「審閱排除理由簡述」欄於末欄，擴充為 12 欄）並執行強制驗證：
+   ```
+   python .agent/skills/hr-talent-screener/scripts/apply_review_decisions.py review_decisions.json
+   ```
+5. **僅在 CSV 內標註，不搬移任何 PDF/MD 檔案，不建立子資料夾**
+6. **強制驗證**（由腳本自動執行）：逐筆比對 CSV 序號與根目錄 PDF 檔名 `{序號}_{姓名}.pdf`，全部一致才可結案
+
+> **嚴禁**為 /review 自行撰寫一次性腳本以 hardcode dict 修改 CSV——所有審閱結果一律走 `review_decisions.json` → `apply_review_decisions.py` 此單一通道（CLAUDE.md 唯一腳本原則）。
 
 **反饋迴路（關鍵！）：**
 - 審閱中發現的「漏網之魚」（應在 /filter 階段就被排除但未被攔截的人），必須回頭分析其特徵
@@ -161,23 +171,24 @@ python scripts/extract_hr_data.py     # Markdown → CSV（含自動防幻覺抽
 
 ---
 
-## CSV 欄位定義（11 欄最終版）
+## CSV 欄位定義（12 欄最終版）
 
 | 欄位 | 說明 |
 |------|------|
 | 序號 | 三位數編號（001, 002...），依姓名筆劃排序 |
 | 姓名 | 候選人全名 |
 | 年紀 | 數字 |
+| Email | 候選人聯絡信箱（從履歷正則擷取） |
 | 語文能力 | 語言種類與程度 |
 | 學歷 | 完整學歷字串 |
 | 近期工作 | 公司名稱 + 職稱 |
 | 近期工作內容 | 最近一份工作的完整敘述 |
-| **審閱結果建議** | 正式 / 排除 / 降級 / 儲備（/review 後新增） |
+| **審閱結果建議** | 正式候選 / 排除 / 降級觀察 / 碩士儲備（/review 後新增） |
 | 總年資 | 數字 |
 | 前二次任職公司 | 扣除最新一家後的近兩次經歷 |
 | **審閱排除理由簡述** | 非正式候選人的排除/降級原因（/review 後新增） |
 
-> **歷史選人 CSV（`historical_selections.csv`）多了一個 `角色` 欄**（v9.0 起），標記每筆記錄屬於哪個角色（default / mep-design / space-manager），跨角色比較用。
+> **歷史選人 CSV（`historical_selections.csv`）多了一個 `角色` 欄**（v9.0 起），標記每筆記錄屬於哪個角色（default / space-manager；歷史條目中的 mep-design 視同 default）。
 
 ---
 

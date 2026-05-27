@@ -19,10 +19,10 @@ c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe .agent/skills/hr-
 c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe .agent/skills/hr-resume-parser/scripts/extract_hr_data.py
 ```
 - 向使用者回報處理結果（共幾位候選人）
-- 回報程式自動防幻覺檢驗的 5 組抽檢結果
+- 回報程式自動防幻覺檢驗的 15 組抽檢結果
 
 ### 步驟 3：Agent 手動抽驗
-從產出的 `HR_Data_Summary.csv` 中另外隨機挑選 5 位不同候選人，回頭讀取對應的 `.pdf` 原始檔進行比對驗證，向使用者報告結果。
+從產出的 `HR_Data_Summary.csv` 中另外隨機挑選 15 位不同候選人，回頭讀取對應的 `.pdf` 原始檔進行比對驗證，向使用者報告結果。
 
 ### 步驟 4：完成
 告知使用者 `HR_Data_Summary.csv` 已產出，採 `utf-8-sig` 編碼可直接用 Excel 開啟。

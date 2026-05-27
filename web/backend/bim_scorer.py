@@ -1,6 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-bim_scorer.py — Role-aware position scoring (default / mep-design / space-manager)
+bim_scorer.py — Role-aware position scoring for the web app
+
+v9.2 ARCHITECTURAL NOTE:
+This module is INTERNAL to the web app (/web), and is independent of the CLI
+filter pipeline. Its 'default' role represents "BIM Manager (legacy)" scoring,
+NOT the CLI's 'default = MEP' concept. The CLI was consolidated to 2 roles
+(default=MEP, space-manager) in v9.2, but the web app retains its 3-role
+weight table for the BIM Manager job-fit visualization. The 'mep-design' key
+here is kept for backward compatibility with web UI role selectors.
 
 For default role: scores against the legacy CTCI BIM Manager (BIM主任) profile
 (100 points across 5 dimensions; existing web app behavior preserved).

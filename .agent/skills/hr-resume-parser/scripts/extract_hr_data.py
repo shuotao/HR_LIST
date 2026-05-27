@@ -26,6 +26,7 @@ def extract_from_md(file_path):
     
     name = ""
     age = ""
+    email = ""
     education = ""
     recent_work = ""
     recent_work_desc = ""
@@ -47,6 +48,13 @@ def extract_from_md(file_path):
                     age = m2.group(1)
                     name = line.split(age)[0].strip()
                     break
+
+    # 1b. Email
+    for line in lines:
+        m_email = re.search(r'[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}', line)
+        if m_email:
+            email = m_email.group(0).strip()
+            break
 
     # 通用區塊擷取工具：找到 start_kw 所在行，往下收集直到遇到 stop_kws 中任一關鍵字。
     # 若找不到 start_kw，回傳空字串（靜默失敗，不中斷處理）。
@@ -234,7 +242,7 @@ def extract_from_md(file_path):
     if not name:
         name = os.path.splitext(os.path.basename(file_path))[0]
 
-    return [name, age, language_skills, education, recent_work, recent_work_desc, seniority, prev_companies]
+    return [name, age, email, language_skills, education, recent_work, recent_work_desc, seniority, prev_companies]
 
 def process_all():
     import random
@@ -258,7 +266,7 @@ def process_all():
     ])
 
     data = []
-    header = ['序號', '姓名', '年紀', '語文能力', '學歷', '近期工作', '近期工作內容', '總年資', '前二次任職公司']
+    header = ['序號', '姓名', '年紀', 'Email', '語文能力', '學歷', '近期工作', '近期工作內容', '總年資', '前二次任職公司']
 
     for f in md_files:
         row = extract_from_md(os.path.join(base_dir, f))
@@ -283,7 +291,7 @@ def process_all():
 
     for idx in sample_indices:
         md_file = md_files[idx]
-        seq, name, age = data[idx][0], data[idx][1], data[idx][2]
+        seq, name, age = data[idx][0], data[idx][1], data[idx][2]  # 序號, 姓名, 年紀（index 2，Email 已插入 index 3）
 
         md_path = os.path.join(base_dir, md_file)
         try:

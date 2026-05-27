@@ -8,18 +8,18 @@
 
 ### 角色模式（多角色 overlay）
 
-從 v9.0 起，本指令支援 `--role` 參數，依職缺角色套用不同 overlay：
+v9.2 起為雙角色架構（本專案歷史上始終只有 2 個角色）：
 
 | 角色 | 用途 | 命令 |
 |------|------|------|
-| `default` | 廠務 / 一般 MEP（既有 v8.13 行為，預設） | `screen_candidates.py ANALYSIS.md` |
-| `mep-design` | MEP 設計工程師（用 BIM 做深） | `screen_candidates.py ANALYSIS_BIM.md --role=mep-design` |
-| `space-manager` | 空間管理（用 BIM 做廣） | `screen_candidates.py ANALYSIS_BIM.md --role=space-manager` |
+| `default`（預設） | **MEP** 工程師（廠務 + MEP 設計合一） | `screen_candidates.py ANALYSIS.md` |
+| `space-manager` | 空間管理（跨系統整合 + 法規） | `screen_candidates.py ANALYSIS.md --role=space-manager` |
+| ~~`mep-design`~~ | （deprecated alias，v9.2 自動 fallback default） | — |
 
-各角色的 overlay 規格詳見 `.agent/skills/hr-talent-screener/references/role_overlays/`。
+各角色的 overlay 規格詳見 `.agent/skills/hr-talent-screener/references/role_overlays/<role>.md`。
 
 ### 步驟 1：確認來源
-- 確認專案根目錄存在 `ANALYSIS.md`（或 `ANALYSIS_BIM.md` 等角色專屬輸入）
+- 確認專案根目錄存在 `ANALYSIS.md`（所有角色共用單一輸入檔）
 - 若不存在，詢問使用者提供檔案路徑
 
 ### 步驟 2：三階段資料清洗
@@ -31,23 +31,20 @@ c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe .agent/skills/hr-
 
 ### 步驟 3：候選人篩選
 
-**default 模式**（不帶 `--role`，行為與 v8.13 完全一致）：
+**default 模式 = MEP 角色**（廠務 + MEP 設計合一，預設）：
 ```
 c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS.md
 ```
 
-**mep-design 模式**（找 MEP 設計工程師）：
+**space-manager 模式**（空間管理工程師：跨系統整合 + 法規理解）：
 ```
-c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS_BIM.md --role=mep-design
+c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS.md --role=space-manager
 ```
 
-**space-manager 模式**（找空間管理工程師）：
-```
-c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS_BIM.md --role=space-manager
-```
+> **deprecated**：`--role=mep-design` v9.2 起自動 fallback 至 `default`（會印警告）。
 
 - 向使用者分區塊呈現候選名單，每人附命中理由摘要
-- 若使用了 `--role`，輸出開頭會有「角色模式: <role>」與 overlay 載入摘要
+- 輸出開頭會有「角色模式: <role>」與 overlay 載入摘要
 
 ### 步驟 4：等待回饋
 詢問使用者：

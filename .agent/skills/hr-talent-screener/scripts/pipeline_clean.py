@@ -21,8 +21,33 @@ if sys.stdout.encoding != 'utf-8':
 # ============================
 # 階段一：雜訊移除
 # ============================
+_REGION_HEADER_SUBSTRINGS = (
+    '## ==========================================================',
+    '【第一區塊',
+    '【第二區塊',
+    '【第三區塊',
+)
+
+
+def _strip_previous_region_headers(lines):
+    """移除前一次 stage3 寫入的區塊標題（讓清洗具備冪等性）。
+
+    Why: stage3 直接 append 區塊標題，重跑時舊標題會被當作雜訊堆積，
+    在實務上看過同一行區塊標題出現 5 次。
+    """
+    cleaned = []
+    for line in lines:
+        if any(token in line for token in _REGION_HEADER_SUBSTRINGS):
+            continue
+        cleaned.append(line)
+    return cleaned
+
+
 def stage1_remove_noise(lines):
     """逐行比對，移除 104 系統的固定雜訊文字。"""
+
+    # 在進入雜訊比對前，先剝除上一次 stage3 寫進去的區塊標題，否則重跑會堆積。
+    lines = _strip_previous_region_headers(lines)
 
     # 以下字串是 104 人力銀行網頁擷取時混入的系統文字（版權宣告、按鈕、狀態標籤等），
     # 不屬於候選人資料，必須逐行比對移除。
@@ -202,9 +227,24 @@ def main():
         print(f"錯誤：找不到檔案 {filepath}")
         sys.exit(1)
 
-    with open(filepath, 'r', encoding='utf-8') as f:
-        raw = f.read().replace('\r\n', '\n')
-    lines = raw.split('\n')
+    # 讀取並偵測編碼問題
+    with open(filepath, 'rb') as f:
+        raw_bytes = f.read()
+
+    # 偵測是否為亂碼狀態 (檢查特徵字 '甇' 的 UTF-8 編碼 b'\xe7\x94\x87')
+    # 這種亂碼通常是將 UTF-8 當作 Big5 讀取後再存成 UTF-8
+    if b'\xe7\x94\x87' in raw_bytes:
+        try:
+            content = raw_bytes.decode('utf-8')
+            fixed = content.encode('big5', errors='ignore').decode('utf-8', errors='ignore')
+            lines = fixed.replace('\r\n', '\n').split('\n')
+            print("偵測到編碼異常 (Mojibake)，已自動執行還原修復。")
+        except Exception as e:
+            print(f"警告：偵測到編碼異常但修復失敗: {e}")
+            lines = raw_bytes.decode('utf-8', errors='replace').replace('\r\n', '\n').split('\n')
+    else:
+        lines = raw_bytes.decode('utf-8', errors='replace').replace('\r\n', '\n').split('\n')
+
     total_before = len(lines)
 
     print("=" * 60)

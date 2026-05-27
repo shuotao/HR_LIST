@@ -74,7 +74,9 @@ def analyze():
         # Step 3: General scoring (M/N/E/D)
         general_result = score_candidate_from_resume(candidate)
 
-        # Step 4: Role-aware position scoring (default = BIM Manager legacy)
+        # Step 4: Role-aware position scoring (web app internal, see bim_scorer.py docstring)
+        # NOTE: web app retains 3-role table for BIM Manager visualization (independent of CLI).
+        # CLI consolidated to 2 roles (default=MEP, space-manager) in v9.2; web app's 'default' is BIM Manager legacy.
         role = request.form.get('role', 'default')
         if role not in ('default', 'mep-design', 'space-manager'):
             role = 'default'
