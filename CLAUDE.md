@@ -122,6 +122,38 @@ Step 4: /review — 結案：基於 CSV 全面審閱、落差確認、精煉規�
 
 ---
 
+## 速記解碼表 (Shorthand Decoder) — Agent 必先查表
+
+> **目的**：使用者常用口語/簡寫下指令（如「step1 BIM」「跑空管」），本表把這些 shorthand 釘定為唯一對映，避免 Agent 推導歧義。
+> **規則**：未列入此表的 shorthand，Agent **一律停下來問**，使用者答覆後 **Agent 必須立即把新對映補進此表並 commit**。
+
+### Step → Command 對映
+
+| 速記 | 正式指令 | 中文名 |
+|------|----------|--------|
+| Step 1 / step1 / S1 | `/filter` | 篩選 |
+| Step 2 / step2 / S2 | `/improve` | 精煉（疊代學習） |
+| Step 3 / step3 / S3 | `/merge` | 合併（PDF → CSV） |
+| Step 4 / step4 / S4 | `/review` | 結案審閱 |
+
+### Role 速記 → `--role` 對映
+
+| Shorthand | `--role` 值 | 說明 |
+|-----------|-------------|------|
+| MEP / 廠務 / 設計 / 機電 / default / 不帶字 | `default` | 預設角色 |
+| 空管 / 空間管理 / 跨系統 / 法規 / **BIM** | `space-manager` | 含 BIM 重型人才的細緻區分規則 |
+| ~~mep-design~~ | 自動 fallback 至 `default` | deprecated alias |
+
+### 「BIM」歧義消解（重要）
+
+CLAUDE.md 中「BIM 是組織級基礎工具」是**業務哲學**——說明 BIM 不該被視為某職務的專業，兩個 role 都會用到。
+
+但**作為候選人標籤的 shorthand**，「BIM」一律指向 `space-manager`。理由：只有 `space-manager` overlay 有區分 BIM 純度的規則（D11 BIM 講師降級、D12 純建模降級、Q1 BIM Developer 解禁、Q4 BIM VIP 解禁、N6 BIM 獨立計分）。default 把 BIM 當基礎工具但不細分 BIM 純度。
+
+> 速記範例：「step1 BIM」 → `python screen_candidates.py ANALYSIS.md --role=space-manager`
+
+---
+
 ## 指令速查
 
 所有腳本必須使用指定的嵌入式 Python：

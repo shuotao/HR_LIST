@@ -45,8 +45,13 @@
 
 **支援的角色（`--role` 值）：**
 - `default`（不帶 `--role`，預設）：**MEP** 工程師——廠務 / MEP 設計合一，做廣 + 做深
-- `space-manager`：空間管理工程師（跨系統整合 + 法規理解）
+- `space-manager`：空間管理工程師（跨系統整合 + 法規理解；含 BIM 重型人才的細緻區分規則）
 - ~~`mep-design`~~：v9.0~v9.1 過渡名稱，v9.2 起為 deprecated alias 自動 fallback 至 `default`
+
+**口語速記對映**（完整表見 [CLAUDE.md 速記解碼表](CLAUDE.md#速記解碼表-shorthand-decoder--agent-必先查表)）：
+- `step1/2/3/4` → `/filter` / `/improve` / `/merge` / `/review`
+- `MEP / 廠務 / 設計 / 機電` → `--role=default`
+- `空管 / 空間管理 / 跨系統 / 法規 / BIM`（作為候選人標籤時）→ `--role=space-manager`
 
 ---
 
