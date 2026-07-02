@@ -34,13 +34,15 @@
    HR_Data_Summary.csv（完整履歷細節，10 欄）
         │
   Step 4: /review [--role=<role>] ── 結案：基於 CSV 全面審閱 + 反饋精煉規則
-        │              → Agent 產出 review_decisions.json → 跑 apply_review_decisions.py
-        │              → CSV 新增「審閱結果建議」+「審閱排除理由簡述」（12 欄）
-        │              → 僅在 CSV 內標註，不搬移任何 PDF/MD 檔案
-        │              → 腳本自動逐筆驗證 CSV 序號 ↔ PDF 檔名一致性
-        │              → 審閱發現的漏網之魚反饋回對應 role overlay
+        │              → Agent 產出判決草稿與「差異清單」
+        │              → 【閘門 A】你簽核差異筆（可說「代打」交 gatekeeper）
+        │              → apply_review_decisions.py 寫入 CSV（12 欄）+ CSV↔PDF 強制驗證
+        │              → 【閘門 B】你回答規則問題選項（可代打）→ 規則落地
+        │              → regression_check.py 黃金集回歸守門（0 新翻盤才放行）
+        │              → 【結案】永遠由你確認（不可代打）
+        │              → gatekeeper agent 全程記錄你的決策 → gate_playbook.md
         ▼
-   下一次 /filter 更精準
+   下一次 /filter 更精準（且 gatekeeper 越來越懂你的判準）
 ```
 
 **支援的角色（`--role` 值）：**
@@ -156,16 +158,21 @@ python scripts/extract_hr_data.py     # Markdown → CSV（含自動防幻覺抽
 
 基於 CSV 全面審閱所有候選人，標註分類結果並反饋精煉規則。
 
-**處理流程：**
-1. 地毯式逐人掃描 CSV 中每位候選人的完整履歷資訊
-2. 依據建廠/廠務/機電相關程度，將每人標記為：**正式候選 / 排除 / 降級觀察 / 碩士儲備**
-3. Agent 將判決整理為 `review_decisions.json`（格式：`{"role": "...", "decisions": {"001": {"result": "正式候選", "reason": ""}, ...}}`）
-4. 跑官方腳本將判決寫入 CSV（新增「審閱結果建議」欄於總年資之前 + 「審閱排除理由簡述」欄於末欄，擴充為 12 欄）並執行強制驗證：
+**處理流程（2026-07-02 起含閘門機制）：**
+1. 官方腳本 `generate_review_decisions.py` 重跑篩選引擎，產生逐人分數與判決草稿
+2. Agent 逐人核對完整履歷，整理**差異清單**（腳本判決 vs Agent 建議不一致的人 + 分數在門檻 ±5 的邊界人，通常一批只有 5~8 筆）
+3. **【閘門 A】你逐筆簽核差異清單**（一致筆自動放行，不打擾你；也可以說「代打」交給 gatekeeper）
+4. 跑官方腳本將定稿判決寫入 CSV（新增「審閱結果建議」+「審閱排除理由簡述」兩欄，擴充為 12 欄）並自動執行 CSV↔PDF 強制驗證：
    ```
    python .agent/skills/hr-talent-screener/scripts/apply_review_decisions.py review_decisions.json
    ```
-5. **僅在 CSV 內標註，不搬移任何 PDF/MD 檔案，不建立子資料夾**
-6. **強制驗證**（由腳本自動執行）：逐筆比對 CSV 序號與根目錄 PDF 檔名 `{序號}_{姓名}.pdf`，全部一致才可結案
+5. Agent 產出落差分析報告 + 問題選項（Q1: A/B/C 選擇題）
+6. **【閘門 B】你回答問題選項**——你沒回答之前，Agent 嚴禁修改任何規則檔
+7. 規則落地後必跑 `regression_check.py` 黃金集回歸（歷史已確認名單 0 新翻盤才放行）
+8. **你確認結案**（結案永遠由你，不可代打）
+
+> **僅在 CSV 內標註，不搬移任何 PDF/MD 檔案，不建立子資料夾**。
+> gatekeeper agent 全程以觀察者身分記錄你在每個閘門的決策，累積成 `gate_playbook.md`——這是它未來代打的判準來源。
 
 > **嚴禁**為 /review 自行撰寫一次性腳本以 hardcode dict 修改 CSV——所有審閱結果一律走 `review_decisions.json` → `apply_review_decisions.py` 此單一通道（CLAUDE.md 唯一腳本原則）。
 
@@ -173,6 +180,69 @@ python scripts/extract_hr_data.py     # Markdown → CSV（含自動防幻覺抽
 - 審閱中發現的「漏網之魚」（應在 /filter 階段就被排除但未被攔截的人），必須回頭分析其特徵
 - 將新發現的排除特徵更新至 `screening_rules.md` 與 `screen_candidates.py`
 - 確保下一次 `/filter` 能自動攔截同類型候選人，形成閉環精煉
+
+---
+
+## Step 4 閘門操作手冊（人類驗證者指南）
+
+你在每批次 /review 只需要出場 **3 次**，總耗時約 5 分鐘：
+
+| 互動點 | 你會看到什麼 | 你要回什麼 | 耗時 |
+|--------|-------------|-----------|------|
+| 閘門 A | 5~8 筆差異清單（每筆附姓名、分數、兩造判決、關鍵證據） | 逐筆「同意」或「改為X」 | 2~3 分 |
+| 閘門 B | 2~4 題規則選擇題（Q1: A/B/C） | 每題選一個字母 | 1~2 分 |
+| 結案 | 任務摘要（人數統計、規則變更、回歸結果） | 「結案」 | 30 秒 |
+
+### 閘門 A 怎麼簽
+
+Agent 呈現差異清單後，一行回覆全部即可，例如：
+
+```
+007 同意；012 改為降級觀察；023 同意；031 改為排除
+```
+
+只有差異筆需要你看——腳本判決與 Agent 判斷一致、且分數離門檻夠遠的人自動放行。
+
+### 閘門 B 怎麼答
+
+每題都是選擇題，C 永遠是「這是誤判，不需調整規則」：
+
+```
+Q1: A
+Q2: C
+```
+
+你沒回答之前，Agent **嚴禁**修改 `screening_rules.md` / `role_overlays/` / `screen_candidates.py`——這是憲法強制條款。
+
+### 想偷懶時：叫 gatekeeper 代打
+
+在閘門 A 或閘門 B 出現時，直接說：
+
+```
+代打
+```
+
+（或「代打閘門」「幫我過閘門」，見 CLAUDE.md 速記解碼表）
+
+gatekeeper 會讀取 `gate_playbook.md`（它從你歷次簽核中蒸餾出的決策模式）逐筆代判，每筆附歷史依據。**行為邊界（你在 2026-07-02 定的）：**
+
+- **查無歷史模式的新型案例一律「掛起」回頭找你**，它不硬猜——所以前幾批它掛起的會比較多，你簽得越多它越能代
+- 代打的判決在紀錄中標記 `agent-proxy`，與你親自的判決永遠可區分
+- 代打的規則變更（閘門 B）必須通過回歸測試 0 新翻盤才落地，翻盤就停下等你
+- **結案永遠不能代打**
+
+### 回歸測試 FAIL 時會發生什麼
+
+`regression_check.py` 會用歷史已確認的 330 筆選人紀錄重跑新規則。若有「歷史已確認正式候選的人被新規則排除」（或反向）即 FAIL 並列出翻盤名單：
+
+- 翻盤是**刻意的**（新規則本來就要排除這類人）→ 你核准後 Agent 跑 `--accept` 更新基準
+- 翻盤是**意外的** → Agent 退回修正規則，不落地
+
+> 技術限制：歷史紀錄只有 CSV 摘要（無完整履歷），既存誤差已由 baseline 機制吸收，回歸測試只對「新翻盤」報警。
+
+### 未來的「免確認模式」
+
+等 gate_playbook.md 累積幾批、代打命中率穩定後，可以把預設切成：一致筆 + 有把握的差異筆全自動，只有回歸翻盤和新型案例才找你。到時只要跟 Agent 說一聲，把 CLAUDE.md 閘門條款改為 auto 模式即可。
 
 ---
 
@@ -206,6 +276,9 @@ python scripts/extract_hr_data.py     # Markdown → CSV（含自動防幻覺抽
 | iteration_log.md | .agent/skills/hr-talent-screener/references/ | 疊代日誌（每批次追加，不刪除） |
 | historical_selections.csv | .agent/skills/hr-talent-screener/references/ | 歷史選人紀錄（跨批次累積） |
 | clear_RULE.md | .agent/skills/hr-talent-screener/references/ | 三階段清洗規則定義 |
+| gate_playbook.md | .agent/skills/hr-talent-screener/references/ | 閘門決策手冊（gatekeeper 自動蒸餾，代打判準來源） |
+| gate_interactions.jsonl | .agent/skills/hr-talent-screener/references/ | 閘門互動流水帳（append-only，user/agent-proxy 判決皆入帳） |
+| gatekeeper.md | .claude/agents/ | 閘門觀察/代理 subagent 定義（RECORD/PROXY 雙模式） |
 | CLAUDE.md | 專案根目錄 | **專案唯一憲法**（Agent 執行守則，所有規則的單一權威來源） |
 | GEMINI.md | 專案根目錄 | 單行指標，指向 CLAUDE.md（嚴禁追加內容） |
 

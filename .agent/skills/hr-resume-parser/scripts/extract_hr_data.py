@@ -10,7 +10,11 @@ if sys.stdout.encoding != 'utf-8':
 
 def normalize_text(text):
     # Convert Kangxi Radicals and other variants to standard CJK characters
-    return unicodedata.normalize('NFKC', text)
+    text = unicodedata.normalize('NFKC', text)
+    # Custom normalization for CJK Radicals not covered by NFKC
+    text = text.replace('\u2ea0', '民').replace('\u2e8f', '民')
+    text = text.replace('\u2ed1', '長').replace('\u2ec4', '西').replace('\u2ed4', '門')
+    return text
 
 def extract_from_md(file_path):
     try:

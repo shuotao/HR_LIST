@@ -9,14 +9,14 @@
 ### 步驟 1：PDF 轉 Markdown
 執行以下指令：
 ```
-c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe .agent/skills/hr-resume-parser/scripts/convert_pdfs.py
+D:\green-tools\python-3.14.2-embed-amd64\python.exe .agent/skills/hr-resume-parser/scripts/convert_pdfs.py
 ```
 - 向使用者回報轉換結果（共幾份 PDF、是否有錯誤）
 
 ### 步驟 2：欄位擷取與 CSV 產出
 執行以下指令：
 ```
-c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe .agent/skills/hr-resume-parser/scripts/extract_hr_data.py
+D:\green-tools\python-3.14.2-embed-amd64\python.exe .agent/skills/hr-resume-parser/scripts/extract_hr_data.py
 ```
 - 向使用者回報處理結果（共幾位候選人）
 - 回報程式自動防幻覺檢驗的 15 組抽檢結果

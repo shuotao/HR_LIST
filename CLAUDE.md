@@ -83,6 +83,7 @@ Step 4: /review — 結案：基於 CSV 全面審閱、落差確認、精煉規�
   - `scripts/screen_candidates.py` — 評分篩選引擎（雙層 M1 關鍵字, M2 產業比對, M3 經歷數, N1-N17 加分, E1-E17 排除, D1-D5 動態扣分, 門檻=20分）
   - `scripts/generate_review_decisions.py` — /review 自動產生 `review_decisions.json`（讀 CSV + 對應 .md 重跑 score_candidate，支援 `--role`）
   - `scripts/apply_review_decisions.py` — /review 把判決寫入 CSV 並驗證 CSV↔PDF 一致性
+  - `scripts/regression_check.py` — 黃金集回歸測試（規則變更守門員；重跑 historical_selections.csv，偵測新翻盤，baseline 機制吸收 CSV 摘要既存誤差）
   - `scripts/pick_candidates_util.py` — 輔助工具
 
 ### 技能二：hr-resume-parser（履歷解析）— 對應 `/merge`
@@ -106,7 +107,7 @@ Step 4: /review — 結案：基於 CSV 全面審閱、落差確認、精煉規�
 
 ### 結案審閱 — 對應 `/review`
 - **輸入**：`HR_Data_Summary.csv`（/merge 產出的完整履歷結構化資料）
-- **處理**：地毯式逐人掃描 → 識別不適任/降級/儲備 → 落差分析 → 使用者確認
+- **處理**：地毯式逐人掃描 → 差異清單 → 【閘門 A】使用者簽核 → 落差分析 → 【閘門 B】問題選項確認（兩閘門皆可由使用者說「代打」交 gatekeeper PROXY 代理，詳見「閘門機制」章節）
 - **產出**：
   - CSV 新增「審閱結果建議」欄（總年資之前）+ 「審閱排除理由簡述」欄（末欄）
   - **僅在 CSV 內標註分類結果（正式候選 / 排除 / 降級觀察 / 碩士儲備），不搬移任何 PDF/MD 檔案**
@@ -152,28 +153,35 @@ CLAUDE.md 中「BIM 是組織級基礎工具」是**業務哲學**——說明 B
 
 > 速記範例：「step1 BIM」 → `python screen_candidates.py ANALYSIS.md --role=space-manager`
 
+### 閘門速記（2026-07-02 新增）
+
+| Shorthand | 對映 |
+|-----------|------|
+| 代打 / 代打閘門 / 幫我過閘門 | spawn `gatekeeper`（MODE: PROXY）代打當前閘門（A 或 B）；查無歷史模式的筆掛起回頭找使用者 |
+| （使用者親自簽核/答題後） | 主 Agent 必須 spawn `gatekeeper`（MODE: RECORD）記錄互動 |
+
 ---
 
 ## 指令速查
 
 所有腳本必須使用指定的嵌入式 Python：
 ```
-c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe
+D:\green-tools\python-3.14.2-embed-amd64\python.exe
 ```
 
 ### /filter
 ```bash
 # 三階段清洗（與角色無關，永遠先跑這個）
-"c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/pipeline_clean.py ANALYSIS.md
+"D:/green-tools/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/pipeline_clean.py ANALYSIS.md
 
 # default = MEP 角色（廠務 + MEP 設計合一，預設）
-"c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS.md
+"D:/green-tools/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS.md
 
 # space-manager（空間管理工程師：跨系統整合 + 法規理解）
-"c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS.md --role=space-manager
+"D:/green-tools/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS.md --role=space-manager
 
 # （deprecated）mep-design 為 v9.0~v9.1 過渡名稱，v9.2 後自動 fallback 至 default
-# "c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS.md --role=mep-design
+# "D:/green-tools/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS.md --role=mep-design
 ```
 
 > **輸入檔統一為 `ANALYSIS.md`**（單一來源原則）。HR 視該批次要找哪個角色，僅切換 `--role` 參數，不需要為每個角色另存一份 ANALYSIS 檔。
@@ -181,29 +189,46 @@ c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe
 ### /merge
 ```bash
 # 與角色無關
-"c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-resume-parser/scripts/convert_pdfs.py
-"c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-resume-parser/scripts/extract_hr_data.py
+"D:/green-tools/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-resume-parser/scripts/convert_pdfs.py
+"D:/green-tools/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-resume-parser/scripts/extract_hr_data.py
 
 # QAQC 手動抽驗（從 CSV 隨機抽 15 筆比對 PDF 原始檔）
-"c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-resume-parser/scripts/verify_extraction.py
+"D:/green-tools/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-resume-parser/scripts/verify_extraction.py
 ```
 
 ### /improve [--role=<role>]
 手動流程：分析 HR 回饋 → 更新規則（default 寫主規則檔 + `role_overlays/default.md`；space-manager 寫 `role_overlays/space-manager.md`）+ `screen_candidates.py` → 追加 `iteration_log.md` + `historical_selections.csv`（含「角色」欄）
 
 ### /review [--role=<role>]
-半自動流程（**所有步驟必須使用官方腳本，嚴禁自寫一次性 .py**）：
+半自動流程（**所有步驟必須使用官方腳本，嚴禁自寫一次性 .py**）。**2026-07-02 起含閘門機制**（詳見「閘門機制與 gatekeeper Agent」章節）：
 
 ```bash
-# Step 1：自動產生 review_decisions.json（讀 CSV + 對應 .md 重跑 score_candidate）
-"c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/generate_review_decisions.py --role=default
+# Step 1：自動產生 review_decisions.json 草稿（讀 CSV + 對應 .md 重跑 score_candidate）
+"D:/green-tools/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/generate_review_decisions.py --role=default
 
-# Step 2：Agent 視需要人工微調 review_decisions.json（合法 result 限 正式候選 / 排除 / 降級觀察 / 碩士儲備）
+# Step 2：Agent 逐人核對完整履歷、微調草稿（合法 result 限 正式候選 / 排除 / 降級觀察 / 碩士儲備），
+#         並產出「差異清單」：(a) 腳本判決 vs Agent 建議不一致筆；(b) 分數在門檻 ±5 的邊界筆
 
-# Step 3：寫入 CSV 並執行 CSV↔PDF 強制驗證
-"c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/apply_review_decisions.py review_decisions.json
+# Step 3：【閘門 A】使用者逐筆簽核差異清單（回覆「同意」或「改為X」）
+#         使用者明示「代打」→ spawn gatekeeper（MODE: PROXY）；掛起筆回頭找使用者
+#         簽核完成後 → spawn gatekeeper（MODE: RECORD）記錄互動
+#         ⛔ 未過閘門 A，嚴禁執行 Step 4
 
-# Step 4：反饋規則缺口至對應 role overlay → 追加 iteration_log.md
+# Step 4：寫入 CSV 並執行 CSV↔PDF 強制驗證
+"D:/green-tools/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/apply_review_decisions.py review_decisions.json
+
+# Step 5：落差分析報告 + 問題選項（Q1: A/B/C 格式）
+
+# Step 6：【閘門 B】使用者回答問題選項（或「代打」→ gatekeeper PROXY）→ RECORD
+#         ⛔ 未取得回答前，嚴禁修改 screening_rules.md / role_overlays / screen_candidates.py
+
+# Step 7：規則落地（screening_rules.md / overlay + screen_candidates.py 同步 + iteration_log.md 追加）
+#         → 之後必跑黃金集回歸測試：
+"D:/green-tools/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/regression_check.py
+#         FAIL（新翻盤）：向使用者呈報翻盤名單；刻意翻盤經使用者核准後跑 --accept 更新 baseline
+#         代打模式下 FAIL 一律停下等使用者裁決
+
+# Step 8：結案確認（永遠由使用者，不可代打）→ gatekeeper RECORD 記錄 closure
 ```
 
 `review_decisions.json` 格式：
@@ -212,6 +237,35 @@ c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe
 ```
 
 > **嚴禁**為 /review 自行撰寫一次性腳本以 hardcode dict 修改 CSV，違反唯一腳本原則。所有審閱結果一律走 `generate_review_decisions.py` → `review_decisions.json` → `apply_review_decisions.py` 此單一通道。
+
+---
+
+## 閘門機制與 gatekeeper Agent（2026-07-02 上線）
+
+> /review 的兩道人類簽核點 + 一個觀察/代理 agent + 一道機器守門（黃金集回歸）。
+> 目的：讓「影響下一輪 /filter 的規則變更」永遠有人類（或有歷史依據的代理）把關。
+
+### 閘門定義與強制條款
+
+| 閘門 | 位置 | 使用者動作 | 強制條款 |
+|------|------|-----------|----------|
+| **閘門 A** | apply_review_decisions.py 之前 | 逐筆簽核「差異清單」（腳本判決 vs Agent 建議不一致筆 + 分數門檻 ±5 邊界筆），回覆「同意」或「改為X」 | 未過閘門 A，**嚴禁**執行 apply |
+| **閘門 B** | 修改規則檔之前 | 回答落差分析問題選項（Q1: A/B/C，C=誤判不調整） | 未取得回答，**嚴禁**修改 screening_rules.md / role_overlays / screen_candidates.py |
+| **回歸守門** | 規則落地之後 | （機器自動）`regression_check.py` 黃金集 0 新翻盤才算通過 | FAIL 時：翻盤若為刻意的規則效果，須使用者核准後 `--accept`；否則退回修正規則 |
+| **結案** | 全部完成後 | 使用者確認結案 | **永遠由使用者，不可代打** |
+
+### gatekeeper Agent（`.claude/agents/gatekeeper.md`）
+
+雙模式，由每次 spawn prompt 第一行 `MODE:` 決定（**非持久狀態**——使用者親自答題它就是觀察者，叫它代打才是代理人，下次自動回到觀察者）：
+
+- **MODE: RECORD（預設身分）**：使用者親自完成閘門 A / 閘門 B / 結案後，主 Agent **必須** spawn gatekeeper 記錄互動至 `gate_interactions.jsonl`，並蒸餾決策模式至 `gate_playbook.md`。
+- **MODE: PROXY（代理）**：使用者明示「代打」時，gatekeeper 讀 playbook 依歷史模式代打判決（`decided_by=agent-proxy`，附 confidence 與歷史依據）。**查無類似模式的新型案例一律掛起待人裁，嚴禁硬猜**（使用者 2026-07-02 親定邊界）。代打的規則變更必須通過回歸守門才落地。
+
+### 閘門資料檔
+
+- `references/gate_interactions.jsonl` — 閘門互動流水帳（**append-only**，只追加不修改）
+- `references/gate_playbook.md` — 決策模式手冊（gatekeeper 自動蒸餾；PROXY 代打的唯一判準來源）
+- `references/regression_baseline.json` — 回歸測試已知誤差基準（僅由 regression_check.py 讀寫；CSV 摘要 vs 完整履歷的既存誤差由此吸收）
 
 ---
 
@@ -265,6 +319,9 @@ c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe
 | iteration_log.md | .agent/skills/hr-talent-screener/references/ | 疊代日誌（歷史累積，只追加不刪除） |
 | historical_selections.csv | .agent/skills/hr-talent-screener/references/ | 歷史選人紀錄（跨批次累積） |
 | clear_RULE.md | .agent/skills/hr-talent-screener/references/ | 三階段清洗規則定義 |
+| gate_playbook.md | .agent/skills/hr-talent-screener/references/ | 閘門決策手冊（gatekeeper 自動蒸餾，PROXY 代打判準） |
+| gate_interactions.jsonl | .agent/skills/hr-talent-screener/references/ | 閘門互動流水帳（append-only） |
+| regression_baseline.json | .agent/skills/hr-talent-screener/references/ | 回歸測試已知誤差基準（僅 regression_check.py 讀寫） |
 | 人才候選計畫.md | 專案根目錄 | 基於首批 56 位選人反推的企業畫像與規則起源 |
 
 ---
@@ -303,7 +360,7 @@ c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe
 - **嚴禁**自行臆測錯誤解法、擅自修改腳本並嘗試強制重跑；必須直接將最後的錯誤輸出紀錄原始地呈報給使用者，直到使用者給予新的明確指令。
 
 ### 3. 強制限縮環境路徑 (Strict Environment Restrictions)
-- **Python 路徑**：`c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe`
+- **Python 路徑**：`D:\green-tools\python-3.14.2-embed-amd64\python.exe`
 - **禁止**在背景呼叫 Windows 系統全域的預設解析器。若無法找到指定的綠色環境工具路徑，同樣觸發上述的 Halt on Error 原則中止任務。
 
 ### 4. 文件生態維護 (Document Ecosystem Integrity)

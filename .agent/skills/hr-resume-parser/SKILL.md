@@ -14,7 +14,7 @@ description: 專門用於處理「104履歷候選分析」。當使用者要求�
 
 ### 步驟 1: 來源確認與前置轉檔 (來源限定 .MD)
 1.  掃描指定目錄，確認存在 `.pdf` 的履歷檔案。
-2.  利用官方指定的 `scripts/convert_pdfs.py` 腳本進行 PDF 轉 Markdown 處理。該腳本使用 Python 的 `markitdown` 函式庫，可避免終端機指令編碼錯誤。執行時必須使用指定的綠色環境：`c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe scripts\convert_pdfs.py`。
+2.  利用官方指定的 `scripts/convert_pdfs.py` 腳本進行 PDF 轉 Markdown 處理。該腳本使用 Python 的 `markitdown` 函式庫，可避免終端機指令編碼錯誤。執行時必須使用指定的綠色環境：`D:\green-tools\python-3.14.2-embed-amd64\python.exe scripts\convert_pdfs.py`。
 3.  確保所有分析都必須基於生成的 `.md` 檔案，絕不從其他快取或不明來源讀取。
 
 ### 步驟 2: MD 檔案的預先清理與標準化 (解決編碼與亂碼)

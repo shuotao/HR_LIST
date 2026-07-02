@@ -25,7 +25,7 @@ v9.2 起為雙角色架構（本專案歷史上始終只有 2 個角色）：
 ### 步驟 2：三階段資料清洗
 執行以下指令（清洗腳本與角色無關）：
 ```
-c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe .agent/skills/hr-talent-screener/scripts/pipeline_clean.py ANALYSIS.md
+D:\green-tools\python-3.14.2-embed-amd64\python.exe .agent/skills/hr-talent-screener/scripts/pipeline_clean.py ANALYSIS.md
 ```
 - 向使用者回報清洗統計（雜訊移除數、唯一候選人數、重複移除數、三區塊分布）
 
@@ -33,12 +33,12 @@ c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe .agent/skills/hr-
 
 **default 模式 = MEP 角色**（廠務 + MEP 設計合一，預設）：
 ```
-c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS.md
+D:\green-tools\python-3.14.2-embed-amd64\python.exe .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS.md
 ```
 
 **space-manager 模式**（空間管理工程師：跨系統整合 + 法規理解）：
 ```
-c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS.md --role=space-manager
+D:\green-tools\python-3.14.2-embed-amd64\python.exe .agent/skills/hr-talent-screener/scripts/screen_candidates.py ANALYSIS.md --role=space-manager
 ```
 
 > **deprecated**：`--role=mep-design` v9.2 起自動 fallback 至 `default`（會印警告）。

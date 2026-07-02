@@ -11,7 +11,7 @@ description: 專門用於處理「104履歷候選人才篩選」。當使用者�
 將未經整理的 104 系統候選人總資料（通常上萬行），經過三階段清洗後，依據已建立的人才篩選規則（`references/screening_rules.md`），自動產出符合條件的候選人姓名一覽表。
 
 ## ⚙️ 環境設定
-- **Python 路徑**：`c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe`
+- **Python 路徑**：`D:\green-tools\python-3.14.2-embed-amd64\python.exe`
 - **工作目錄**：ANALYSIS.md 所在的專案資料夾
 - **參考文件**（三份，各有不同生命週期）：
   - `references/screening_rules.md` — **純規則手冊**（跨批次永久有效，僅更新規則本身）
@@ -30,7 +30,7 @@ description: 專門用於處理「104履歷候選人才篩選」。當使用者�
 
 **執行指令**：
 ```
-c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe scripts/pipeline_clean.py <ANALYSIS.md路徑>
+D:\green-tools\python-3.14.2-embed-amd64\python.exe scripts/pipeline_clean.py <ANALYSIS.md路徑>
 ```
 
 腳本會輸出清洗統計摘要，Agent 需向使用者回報此統計。
@@ -49,13 +49,13 @@ c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe scripts/pipeline_
 **執行指令**（雙角色架構，輸入檔統一為 `ANALYSIS.md`）：
 ```
 # default = MEP 角色（廠務 + MEP 設計合一，預設）
-c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe scripts/screen_candidates.py ANALYSIS.md
+D:\green-tools\python-3.14.2-embed-amd64\python.exe scripts/screen_candidates.py ANALYSIS.md
 
 # space-manager（空間管理工程師：跨系統整合 + 法規理解）
-c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe scripts/screen_candidates.py ANALYSIS.md --role=space-manager
+D:\green-tools\python-3.14.2-embed-amd64\python.exe scripts/screen_candidates.py ANALYSIS.md --role=space-manager
 
 # （deprecated）mep-design 為 v9.0~v9.1 過渡名稱，v9.2 起自動 fallback 至 default
-# c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe scripts/screen_candidates.py ANALYSIS.md --role=mep-design
+# D:\green-tools\python-3.14.2-embed-amd64\python.exe scripts/screen_candidates.py ANALYSIS.md --role=mep-design
 ```
 
 ### 步驟 3：結果呈現與確認
@@ -135,16 +135,24 @@ Agent 在完成規則更新後，**必須主動**進行以下反思分析：
 >
 > **🔁 階段獨立原則（v10.3+ 新增）**：每次 `/review` 必須當作獨立執行——進場第一件事**重讀 `HR_Data_Summary.csv` 與根目錄 PDF 列表**確認當前狀態，不可信任跨對話的上下文記憶或前批殘留檔案（`review_decisions.json` 可能是上一輪遺留的舊版，會被 `apply_review_decisions.py` 的對齊檢查擋下並要求重新產生）。
 
-Agent 基於 `HR_Data_Summary.csv` 執行最終審閱：
+Agent 基於 `HR_Data_Summary.csv` 執行最終審閱（**2026-07-02 起含閘門機制**，閘門定義詳見 CLAUDE.md「閘門機制與 gatekeeper Agent」章節）：
 
-1. **比對 CSV 細節 vs 篩選規則**：逐人檢視 CSV 中的完整工作內容、年資、學歷細節，找出：
-   - ANALYSIS.md 摘要看起來合格，但 PDF 完整履歷揭露不符合的人（**誤選深層發現**）
-   - ANALYSIS.md 摘要看起來普通，但 PDF 完整履歷揭露其實很強的人（**漏選深層發現**）
-2. **執行落差分析報告**：使用步驟 4.3 的格式，基於 CSV 細節產出更精確的落差分析
-3. **向使用者呈現問題選項**：讓使用者確認是否需要調整規則
-4. **精煉規則**：根據使用者回覆，更新 screening_rules.md 與 screen_candidates.py
-5. **CSV 欄位新增（CSV 為 10 欄初始 → 12 欄結案，由官方腳本落地）**：
-   Agent 將審閱結果整理為 `review_decisions.json`（格式如下），然後執行官方腳本 `scripts/apply_review_decisions.py` 將判決寫入 `HR_Data_Summary.csv` 並執行 CSV↔PDF 驗證。**嚴禁自行撰寫一次性腳本以 hardcode dict 方式直接修改 CSV**（違反 CLAUDE.md 唯一腳本原則）。
+1. **產生判決草稿**：執行官方腳本重跑篩選引擎，得逐人分數與基線判決：
+   ```
+   D:\green-tools\python-3.14.2-embed-amd64\python.exe scripts/generate_review_decisions.py --role=<role>
+   ```
+2. **Agent 微調 + 產出差異清單**：逐人核對完整履歷（.md/.pdf），把候選人分兩堆：
+   - **一致筆**：腳本判決 = Agent 判斷，且分數離門檻夠遠 → 不打擾使用者
+   - **差異筆**：(a) Agent 想推翻腳本判決的人；(b) 分數在門檻 ±5 的邊界人
+   差異清單每筆附：序號、姓名、腳本分數、腳本判決、Agent 建議判決、關鍵證據 1~2 行。
+   同時找出「誤選深層發現」（摘要合格但完整履歷不符）與「漏選深層發現」（摘要普通但其實很強）。
+3. **【閘門 A】使用者簽核差異筆**：
+   - 呈現差異清單，使用者逐筆回覆「同意」或「改為X」
+   - 使用者說「代打」→ spawn `gatekeeper`（MODE: PROXY）：有歷史模式支持的筆代打判決，**查無模式的筆掛起**，掛起清單仍回頭請使用者裁決
+   - 簽核完成後 → spawn `gatekeeper`（MODE: RECORD）記錄本次互動（含使用者對掛起筆的裁決）
+   - ⛔ **未過閘門 A，嚴禁執行第 4 步**
+4. **CSV 欄位新增（CSV 為 10 欄初始 → 12 欄結案，由官方腳本落地）**：
+   Agent 將定稿判決整理為 `review_decisions.json`（格式如下），然後執行官方腳本 `scripts/apply_review_decisions.py` 將判決寫入 `HR_Data_Summary.csv` 並執行 CSV↔PDF 驗證。**嚴禁自行撰寫一次性腳本以 hardcode dict 方式直接修改 CSV**（違反 CLAUDE.md 唯一腳本原則）。
    - 「**審閱結果建議**」— 由腳本插在「總年資」之前，值為：`正式候選` / `排除` / `降級觀察` / `碩士儲備`
    - 「**審閱排除理由簡述**」— 由腳本追加在末欄，正式候選者自動留空
    - **`review_decisions.json` 格式**：
@@ -159,16 +167,24 @@ Agent 基於 `HR_Data_Summary.csv` 執行最終審閱：
      ```
    - **執行指令**：
      ```
-     c:\Users\01102088\Desktop\python-3.14.2-embed-amd64\python.exe scripts/apply_review_decisions.py review_decisions.json
+     D:\green-tools\python-3.14.2-embed-amd64\python.exe scripts/apply_review_decisions.py review_decisions.json
      ```
    - 腳本具備冪等性（可重跑），合法 result 值僅限上述四種，任何越權值會中止執行。
-6. **強制驗證 CSV ↔ PDF 一致性**（由 `apply_review_decisions.py` 自動執行）：逐筆比對 CSV 序號與根目錄 PDF 檔名 `{序號}_{姓名}.pdf`，任一筆不一致即立即中止。**所有 PDF/MD 一律保留在根目錄**，**禁止建立 excluded/ / downgraded/ / reserve/ 子資料夾**，分類結果僅記錄於 CSV 的「審閱結果建議」欄位中。
-7. **反饋規則缺口**：審閱中發現的「漏網之魚」（應在 /filter 階段就被排除但未被攔截）必須回頭分析其特徵，更新 `screening_rules.md`（default）或 `role_overlays/<role>.md`（overlay）與 `screen_candidates.py`。
-8. **呈現本次任務摘要**：
+5. **強制驗證 CSV ↔ PDF 一致性**（由 `apply_review_decisions.py` 自動執行）：逐筆比對 CSV 序號與根目錄 PDF 檔名 `{序號}_{姓名}.pdf`，任一筆不一致即立即中止。**所有 PDF/MD 一律保留在根目錄**，**禁止建立 excluded/ / downgraded/ / reserve/ 子資料夾**，分類結果僅記錄於 CSV 的「審閱結果建議」欄位中。
+6. **落差分析報告 + 問題選項**：使用步驟 4.3 的格式，基於 CSV 細節產出落差分析，整理成問題選項（Q1: A/B/C，C 永遠是「誤判，不需調整」）。
+7. **【閘門 B】使用者回答問題選項**（或說「代打」→ gatekeeper PROXY 依歷史答題傾向代答，查無傾向的題掛起）→ 完成後 spawn `gatekeeper`（MODE: RECORD）。
+   - ⛔ **未取得回答前，嚴禁修改 `screening_rules.md` / `role_overlays/` / `screen_candidates.py`**
+8. **精煉規則 + 回歸守門**：根據閘門 B 的答案更新 `screening_rules.md`（default）或 `role_overlays/<role>.md`（overlay）與 `screen_candidates.py`（漏網之魚必須歸因到具體規則缺口），然後**必跑**黃金集回歸測試：
+   ```
+   D:\green-tools\python-3.14.2-embed-amd64\python.exe scripts/regression_check.py
+   ```
+   - PASS（0 新翻盤）→ 規則變更成立
+   - FAIL → 向使用者呈報翻盤名單；翻盤若為刻意的規則效果，經使用者核准後跑 `--accept` 更新 baseline；否則退回修正規則。**代打模式下 FAIL 一律停下等使用者**。
+9. **呈現本次任務摘要**：
    - 原始候選人數 → 最終入選人數
-   - 本次規則變更摘要
+   - 本次規則變更摘要 + 回歸測試結果
    - 累計規則版本
-9. **正式結案**：使用者確認後，本次找人任務完成，規則已沉澱為下一次 `/filter` 的養分
+10. **正式結案**：使用者確認後（**結案永遠由使用者，不可代打**），spawn `gatekeeper`（MODE: RECORD）記錄 closure。本次找人任務完成，規則已沉澱為下一次 `/filter` 的養分
 
 > ⚠️ 這是一個**逐次疊代增加準度**的過程。每次執行，人才候選計畫都會變得更精準。
 

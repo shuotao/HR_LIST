@@ -45,13 +45,31 @@ VALID_RESULTS = {'正式候選', '排除', '降級觀察', '碩士儲備'}
 def normalize_text(text):
     """CLAUDE.md gotcha #2：MarkItDown 康熙部首 + 分頁符。"""
     text = unicodedata.normalize('NFKC', text)
+    text = text.replace('\u2ea0', '民').replace('\u2e8f', '民')
+    text = text.replace('\u2ed1', '長').replace('\u2ec4', '西').replace('\u2ed4', '門')
     return text.replace('\x0c', '\n').replace('\r', '\n')
+
+
+# 104 履歷頂部固定樣板（使用公司/使用規範宣告）——會把「中鼎」注入 full_text，
+# 使 score_candidate 中所有「中鼎 in full / PREMIUM in full」豁免被騙過（每位候選人
+# 都被誤判有中鼎 EPC 背景）。/filter 路徑由 pipeline_clean 清除，/review 路徑必須在此比照清除。
+_BOILERPLATE_MARKERS = (
+    '中鼎集團_中鼎', '履歷使用公司', '本人同意本履歷', '使用人員', '使用時間',
+    '履歷使用規範', '除事先告知', '第三方AI', '為保障資訊安全', '令規定',
+)
+
+
+def strip_boilerplate(content):
+    """移除 104 頂部樣板宣告行（雜訊移除，比照 pipeline_clean stage1）。
+    注意：只清頂部固定宣告，不動候選人的「甄試歷程」段落（@ctci.com VIP 訊號在該處）。"""
+    kept = [l for l in content.split('\n') if not any(m in l for m in _BOILERPLATE_MARKERS)]
+    return '\n'.join(kept)
 
 
 def parse_md_to_candidate(md_path, name):
     """把單一 .md 履歷解析成 score_candidate 期望的 dict 結構。"""
     with open(md_path, 'r', encoding='utf-8') as f:
-        content = normalize_text(f.read())
+        content = strip_boilerplate(normalize_text(f.read()))
     lines = [l.strip() for l in content.split('\n') if l.strip()]
 
     age = ""
@@ -125,6 +143,10 @@ def main():
         seq = row['序號']
         name = row['姓名']
         md_path = os.path.join(args.md_dir, f"{seq}_{name}.md")
+        if not os.path.exists(md_path):
+            alt_name = name.replace('⺠', '民') if '⺠' in name else name.replace('民', '⺠')
+            md_path = os.path.join(args.md_dir, f"{seq}_{alt_name}.md")
+            
         if not os.path.exists(md_path):
             missing_md.append((seq, name))
             decisions[seq] = {"result": "正式候選", "reason": ""}

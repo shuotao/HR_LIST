@@ -34,7 +34,7 @@ try:
     import pypdf
 except ImportError:
     sys.exit("❌ 需要 pypdf 套件。請在指定 Python 環境執行：\n"
-             "   c:/Users/01102088/Desktop/python-3.14.2-embed-amd64/python.exe -m pip install pypdf")
+             "   D:/green-tools/python-3.14.2-embed-amd64/python.exe -m pip install pypdf")
 
 
 def normalize(text):

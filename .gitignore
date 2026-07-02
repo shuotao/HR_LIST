@@ -7,8 +7,13 @@
 !.agent/skills/**/references/*.md
 !.agent/skills/**/references/role_overlays/*.md
 !.claude/commands/*.md
+!.claude/agents/*.md
 HR_Data_Summary.csv
 .agent/skills/**/references/historical_selections.csv
+# 閘門原始逐筆紀錄與回歸基準含候選人姓名 PII，比照 historical_selections.csv 不入庫
+# （gate_playbook.md 為蒸餾決策手冊，比照 iteration_log.md/screening_rules.md 可入庫）
+.agent/skills/**/references/gate_interactions.jsonl
+.agent/skills/**/references/regression_baseline.json
 __pycache__/
 .pytest_cache/
 *.pyc

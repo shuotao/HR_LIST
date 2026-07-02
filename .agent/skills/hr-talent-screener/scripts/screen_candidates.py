@@ -58,7 +58,9 @@ CROSS_SYSTEM_TOKENS = [
 MEP_SUBSTANCE_TOKENS = [
     '機電', '空調', 'HVAC', '消防', '電力', '配電', '給排水',
     '管線', '配管', '無塵室', '建廠', '擴廠', 'MEP', '廠務',
-    '監造', '監工', '水處理',
+    '水處理', '水電', 'Piping', 'piping', 'PIPING', 'Utility',
+    'utility', 'UTILITY', 'Utilities', 'utilities', 'UTILITIES',
+    'P&ID', '電機', '電氣', '電控', '配線',
 ]
 MODELING_TERMS = [
     '繪圖', '建模', '塑模', '套圖', '審圖', '模型',
@@ -108,12 +110,16 @@ class RoleOverlay:
 
 def get_overlay(role_name):
     """根據 role_name 取得對應 overlay 配置。"""
-    overlay = RoleOverlay(role_name)
+    # 處理 mep-design (deprecated alias) 自動 fallback 至 default
     if role_name == 'mep-design':
+        role_name = 'default'
+
+    overlay = RoleOverlay(role_name)
+    if role_name == 'default':
         overlay.n6_independent_score = 12
         overlay.enable_n18_bim_mep = True
         overlay.n18_base_weight = 12
-        overlay.n17_weight_override = (8, 15)  # default: (10, 20)
+        overlay.n17_weight_override = (8, 15)  # default: (8, 15)
         overlay.unlock_e2_e6_e8_for_engineering = True
         overlay.enable_d7_bim_only = True
         overlay.require_mep_substance_for_unlock = True
@@ -271,9 +277,11 @@ NON_ENGINEERING_DESIRED = [
 # E5 排除：製程/製造/非建廠端
 NON_CONSTRUCTION_MANUFACTURING = [
     '製程', '製造', '生產', '設備工程師', '技術工程師', '生產線', '品保', '機械製造',
-    '自動控制', '設計', '機構設計', '工程師', '操作', 'PLC', '電控', 'Field Service', 
+    '自動控制', '設計', '機構設計', '工程師', '操作', 'PLC', '電控', 'Field Service',
     '客服', '設計工程師', '售後服務', 'AIOT', '產品', '韌體', 'FAE', 'fae', '應用工程師',
-    '研發', 'RD', 'R&D', 'rd', '光機', '光電', '微影', '顯示', '開發', '設備維護', '運轉維護', '保養', '設備保養', '服務工程師', '安裝調試員'
+    '研發', 'RD', 'R&D', 'rd', '光機', '光電', '微影', '顯示', '開發', '設備維護', '運轉維護', '保養', '設備保養', '服務工程師', '安裝調試員',
+    # v11.4 (Q4): 製造設備維修/加工端補漏——蔡明融型(CNC/機台/風機/輪轂設備維護，零建廠)
+    'CNC', '機台組裝', '機台操作', '機械組裝', '輪轂', '風機維護', '風力發電機', '銑床'
 ]
 
 # E6 排除：脫離高度工程專業 (低階勞力/非專業)
@@ -380,6 +388,8 @@ def parse_candidates(lines):
         for j in range(5, len(block)):
             bl = block[j]
             if re.match(r'\d{4}/\d{2}', bl):
+                if any(k in bl for k in ['應徵履歷', '意願通知', '主動應徵', '甄試歷程', '系統通知', '發出詢問', '專案聯絡']):
+                    continue
                 work_lines.append(bl)
 
         # 全文（用於關鍵字搜尋）
@@ -415,7 +425,7 @@ def get_line_years(line):
         match_mo_only = re.search(r'\(?(\d+)個月\)?', line)
         mo = int(match_mo_only.group(1)) if match_mo_only else 0
     if '在職' in line:
-        match_date = re.match(r'(\d{4})/(\d{2})', line)
+        match_date = re.search(r'(\d{4})/(\d{2})', line)
         if match_date:
             start_yr = int(match_date.group(1))
             start_mo = int(match_date.group(2))
@@ -450,10 +460,20 @@ def score_candidate(c, overlay=None):
     # ===== Q5: 中鼎內部轉發 VIP 解禁 (v10.2 新增, 2026-05-27) =====
     # 履歷甄試歷程含「@ctci.com」email → HR 內部已認可，強訊號
     # 效果：+30 強加分，並豁免 E2/E4/E6/E8/E19 排除規則
+    # v11.2 限制：若近期工作段落含有業務或Sales，限制其VIP豁免(避免業務人員誤判入選)
     ctci_vip = CTCI_INTERNAL_SIGNAL in full
     if ctci_vip:
-        score += 30
-        reasons.append("Q5 中鼎內部轉發 VIP (+30): HR 已認可, 豁免 E2/E4/E6/E8/E19")
+        has_recent_sales = False
+        for line in c['work_lines'][:3]:
+            if any(kw in line.lower() for kw in ['業務', 'sales']):
+                has_recent_sales = True
+                break
+        if has_recent_sales:
+            ctci_vip = False
+            reasons.append("Q5 VIP bypass restricted due to recent Sales/業務 role")
+        else:
+            score += 30
+            reasons.append("Q5 中鼎內部轉發 VIP (+30): HR 已認可, 豁免 E2/E4/E6/E8/E19")
 
     def _is_bim_unlock(c, work_text, desired, full):
         # 檢查是否為高科大廠 VIP 人才 (Q4)
@@ -465,12 +485,21 @@ def score_candidate(c, overlay=None):
                 return True # 直接無條件解禁
 
         # default 解禁：必須具備至少一項工程 M 條件
-        m1_hit = any(kw in full for kw in ['工程師', '主任', '經理', '專案', '管線', '監工'])
-        m2_hit = any(kw in full for kw in ['機電', '水電', '空調', '廠務', '建設', '營造'])
+        # 移除「建設」在「土建設計」、「營建設計」等相鄰產生的 false positive 匹配
+        full_for_unlock = re.sub(r'(土建|營建|建築|室內|裝修|估算)設計', '', full)
+        
+        m1_hit = any(kw in full_for_unlock for kw in ['工程師', '主任', '經理', '專案', '管線', '監工'])
+        m2_hit = any(kw in full_for_unlock for kw in ['機電', '水電', '空調', '廠務', '建設', '營造'])
         base_pass = m1_hit and m2_hit
         
         # 修正(林耿輝 E3 領班漏洞)：若沒有實質的歷任工程管理職稱，不可解鎖基層勞務
         has_real_work_eng = any(kw in work_text for kw in ['工程師', '主任', '副理', '經理', '專案', '廠務', '監造', '監工'])
+        # v11.2: 領班且具電機/機械相關學歷與對口希望職稱，可視同具備工程管理職
+        if '領班' in work_text:
+            has_ee_me_hvac_degree = any(k in edu for k in ['電機', '機械', '冷凍空調', '機電'])
+            has_eng_desired = any(k in desired for k in ['工程師', '主任', '主管'])
+            if has_ee_me_hvac_degree and has_eng_desired:
+                has_real_work_eng = True
         if not has_real_work_eng:
             base_pass = False
 
@@ -482,7 +511,7 @@ def score_candidate(c, overlay=None):
         return base_pass
 
     # E19: 絕對不可挽救的致命防呆 (無條件排除，不適用任何解禁)
-    fatal_kill = [kw for kw in ['倉管', '業助', '組員', '安裝調試員', '服務工程師', '工務助理', '客服人員', '水電技師', '服務員', '銷售員', '外送員', '客服工程師', '技術助理工程師', '助理技術工程師', '資深技術員', '資深助理工程師', '資深技術工程師', '廠務助理工程師', '總務專員', '客服主任', '總務工程師', '園藝', '景觀', 'presales', '系辦助理', '口譯', '機構工程師', '機構設計', '機台', '維運人員', '空軍', '陸軍', '海軍', '國防部', '參謀', '士官', '志願役', '職業軍人'] if kw.lower() in work_and_desired.lower()]
+    fatal_kill = [kw for kw in ['倉管', '業助', '組員', '安裝調試員', '服務工程師', '工務助理', '客服人員', '水電技師', '服務員', '銷售員', '外送員', '客服工程師', '技術助理工程師', '助理技術工程師', '資深技術員', '資深助理工程師', '資深技術工程師', '廠務助理工程師', '總務專員', '客服主任', '總務工程師', '園藝', '景觀', 'presales', '系辦助理', '口譯', '機構工程師', '機構設計', '機台', '維運人員', '空軍', '陸軍', '海軍', '國防部', '參謀', '士官', '志願役', '職業軍人', '銷售', '營業員', '物流', '測試工程師', '電信工程師', '通訊工程師', '通信工程師', '通訊系統工程師'] if kw.lower() in work_and_desired.lower()]
     if fatal_kill == ['水電技師'] or (len(fatal_kill) > 0 and set(fatal_kill) == {'水電技師'}):
         has_high_tech_or_epc = any(kw in full for kw in ['台積', '聯電', '美光', '日月光', '中鼎', '帆宣', '漢唐', '亞翔', '泰創', '聖暉', '積體電路', '聯華電子'])
         if has_high_tech_or_epc:
@@ -506,6 +535,47 @@ def score_candidate(c, overlay=None):
     if ctci_vip and fatal_kill:
         reasons.append(f"E19 豁免 (Q5 CTCI VIP): 略過致命防呆 {','.join(fatal_kill[:2])}")
         fatal_kill = []
+
+    # v10.5: E19 歷史低階經歷豁免 (林帛融 escape)
+    # 若最新工作經歷為實質工程/管理職，且致命關鍵字僅存在於較舊的歷史經歷中（不在 desired 和 first_work 中），則豁免
+    # v11.1 (E34 限制): 若最新工作持任 < 1.0 年，需額外檢查先前歷史中是否有 >= 2 年非致命 MEP 工程經歷才准予豁免
+    if fatal_kill:
+        strong_eng_titles = ['工程師', '主任', '主管', '副理', '經理', '專案', '廠務', '監造', '監工', '技師', '機電長']
+        has_strong_first_work = any(t in first_work for t in strong_eng_titles) or ('長' in first_work and any(kw in first_work for kw in ['工程', '營造', '機電', '廠務']))
+        has_recent_sales = any(any(kw in line.lower() for kw in ['業務', 'sales']) for line in c['work_lines'][:3])
+        if has_strong_first_work and not has_recent_sales:
+            # E34 restriction: 最新工作 < 1 年，檢查是否有實質先前工程經歷
+            first_work_yrs = get_line_years(c['work_lines'][0]) if c['work_lines'] else 0
+            e34_block = False
+            if first_work_yrs < 1.0 and len(c.get('work_lines', [])) > 1:
+                # 檢查先前工作是否有至少一段 >= 2 年的 MEP/工程經歷（排除致命關鍵字及電信/電力基建所在行）
+                e19_fatal_all = ['倉管', '業助', '服務員', '銷售員', '外送員', '測試工程師',
+                                 '電信工程師', '通訊工程師', '通信工程師', '通訊系統工程師',
+                                 '水電工', '水電行', '水電人員']
+                # 電信/通訊/變電等電力基建經歷不算 MEP 建廠實務
+                non_mep_infra_kws = ['電信', '通訊', '通信', '變電', '變電所', '中華電信', '台灣電力']
+                has_solid_prior = False
+                for pl in c['work_lines'][1:]:
+                    pl_yrs = get_line_years(pl)
+                    has_fatal_in_line = any(k in pl for k in e19_fatal_all)
+                    has_infra_in_line = any(k in pl for k in non_mep_infra_kws)
+                    has_eng_in_line = any(k in pl for k in ['設計', '規劃', '機電', '空調', '消防', '建廠', '擴廠', '廠務', '水處理', '監造', '監工'])
+                    if pl_yrs >= 2.0 and has_eng_in_line and not has_fatal_in_line and not has_infra_in_line:
+                        has_solid_prior = True
+                        break
+                if not has_solid_prior:
+                    e34_block = True
+                    reasons.append(f"E34 限制: 最新工作僅{first_work_yrs:.1f}年，且先前歷史無 >= 2年實質 MEP 工程經歷，不准予 E19 歷史豁免")
+
+            if not e34_block:
+                exempted_kws = []
+                for kw in list(fatal_kill):
+                    not_in_desired_or_first = (kw.lower() not in desired.lower()) and (kw.lower() not in first_work.lower())
+                    if not_in_desired_or_first:
+                        exempted_kws.append(kw)
+                        fatal_kill.remove(kw)
+                if exempted_kws:
+                    reasons.append(f"E19 歷史低階經歷豁免: {','.join(exempted_kws)} 僅存在於舊歷史經歷中，且最新工作為實質工程/管理職")
 
     if fatal_kill:
         return 0, [f"排除(E19): 致命防呆不接受解禁={','.join(fatal_kill[:2])}"], True
@@ -550,7 +620,12 @@ def score_candidate(c, overlay=None):
     unrelated_count = sum(1 for line in c['work_lines'] if any(kw in line for kw in low_level_or_unrelated))
     real_eng_count = sum(1 for line in c['work_lines'] if any(kw in line for kw in ['工程師', '主任', '副理', '經理', '專案', '廠務', '監造', '監工']))
     if len(c['work_lines']) >= 2 and real_eng_count <= 1 and unrelated_count >= 1 and not has_thick_work:
-        return 0, ["排除(E20e): 核心工程經歷單一且其餘為低階/無關經歷"], True
+        # v11.2: 若最新經歷為資深/領導職稱(如機電長、主任、經理，或含「長」且包含機電/工程/廠務)，則予以豁免
+        has_senior_lead_first = any(k in first_work for k in ['機電長', '主任', '經理']) or ('長' in first_work and any(kw in first_work for kw in ['機電', '工程', '廠務']))
+        if has_senior_lead_first:
+            reasons.append("E20e 豁免: 最新工作為資深/領導職稱(機電長等)")
+        else:
+            return 0, ["排除(E20e): 核心工程經歷單一且其餘為低階/無關經歷"], True
 
     # E3: 脫離高度工程專業（低階維修/作業員）
     low_skill_hits = [kw for kw in LOW_SKILL_KEYWORDS if kw in desired or kw in first_work]
@@ -559,29 +634,63 @@ def score_candidate(c, overlay=None):
     # 特例防呆：這些職稱就算有工程師或機電字眼，也不能被救回
     unsavable_hits = [kw for kw in ['維修工程師', '技術工程師', '助理', '實習', '學徒', '中控', '夜班', '工讀', '助手', '專員', '駐點', '倉管', '倉庫', '器材', '物料', '總務', '行政', '人事', '檢修', '技工', '半技', '粗工', '保全', '駐衛警', '勤務', '物業', '機械技術', '工務助理', '業助', '組員', '水電技師', '服務員', '銷售員', '外送員', '技術人員', '兼職', '兼職人員', '正職', '領班', 'PT'] if kw in desired + first_work]
     
+    # v11.2: 專員豁免 (若最新職稱為專員但位於工程/營造公司，或先前有 >=2 段工程經歷，則不視為 unsavable)
+    if '專員' in unsavable_hits and '專員' in first_work:
+        has_eng_company = any(kw in first_work for kw in ['工程', '營造'])
+        prior_eng_count = sum(1 for line in c['work_lines'][1:] if any(k in line for k in ['工程師', '主任', '主管', '副理', '經理', '技師']))
+        if has_eng_company or prior_eng_count >= 2:
+            unsavable_hits.remove('專員')
+
+    # v11.2: 領班豁免 (若具備電機/機械學歷且希望職稱含工程師/主任/主管，則不視為 unsavable)
+    if '領班' in unsavable_hits:
+        has_ee_me_hvac_degree = any(k in edu for k in ['電機', '機械', '冷凍空調', '機電'])
+        has_eng_desired = any(k in desired for k in ['工程師', '主任', '主管'])
+        if has_ee_me_hvac_degree and has_eng_desired:
+            unsavable_hits.remove('領班')
+
     # 修正(張承翰 E3 救回)：若命中「正職」，但第一段工作經歷為明確工程專業，則不視為 unsavable
     if '正職' in unsavable_hits:
-        has_real_eng_first = any(k in first_work for k in ['工程師', '主任', '副理', '經理', '專案', '廠務'])
+        # v11.2: 納入技師與工程公司負責人作為實質工程經歷
+        has_real_eng_first = any(k in first_work for k in ['工程師', '主任', '副理', '經理', '專案', '廠務', '技師']) or ('負責人' in first_work and any(kw in first_work for kw in ['工程', '營造']))
         if has_real_eng_first:
             unsavable_hits.remove('正職')
             
+    # v10.5: 修正(吳柏瑢 E3 救回)：若第一段/最新工作經歷為實質工程專業或主管職，且該 unsavable 關鍵字僅出現在希望職稱中，則允許豁免
+    # （代表此人實際具有工程經驗，僅在找工作時寫得比較寬泛）
+    if unsavable_hits:
+        # v11.2: 納入工程公司負責人
+        first_is_real_eng = any(k in first_work for k in ['工程師', '主任', '主管', '副理', '經理', '專案', '廠務', '監造', '監工', '技師']) or ('負責人' in first_work and any(kw in first_work for kw in ['工程', '營造']))
+        only_in_desired = all(kw not in first_work for kw in unsavable_hits)
+        if first_is_real_eng and only_in_desired:
+            reasons.append(f"E3/E6 豁免: 最新工作為實質工程專業，且低階關鍵字僅存於希望職稱")
+            unsavable_hits = []
+
     if unsavable_hits:
         has_mgmt_or_eng = False
 
     if low_skill_hits and not has_mgmt_or_eng:
-        if _is_bim_unlock(c, work_text, desired, full):
+        if not unsavable_hits and _is_bim_unlock(c, work_text, desired, full):
             reasons.append(f"E6/E3條件化解禁({overlay.role_name}): {','.join(low_skill_hits[:2])}通過 M1/M2 工程門檻")
         else:
             return 0, [f"排除(E3): 脫離工程專業={','.join(low_skill_hits[:2])}"], True
 
-    # E4: 純土建/營造人員無建廠/廠房營造經驗
-    is_pure_civil = (c['group'] == 'G1_土木建築') or any(kw in desired + work_text for kw in ['建築', '營建', '土木', '營造', '建設'])
+    # E4: 純土建/營造人員無建廠/廠房營造經驗 (v10.8: 限制為 G1 組且 MEP 關鍵字僅檢查工作職稱而非公司名)
+    is_pure_civil = (c['group'] == 'G1_土木建築')
     if is_pure_civil:
+        titles = []
+        for line in c['work_lines']:
+            # Remove date range pattern (like 2016/10~2024/04 or 2016/10~仍在職) from anywhere in the line
+            cleaned = re.sub(r'\d{4}/\d{2}(~\d{4}/\d{2}|~仍在職)?\s*', '', line)
+            # Remove parentheses content like (7年7個月)
+            cleaned = re.sub(r'\s*\(.*?\)', '', cleaned)
+            parts = cleaned.split()
+            if parts:
+                titles.append(parts[-1])
+        titles_text = '\n'.join(titles)
+
         has_factory = any(kw in work_and_desired for kw in ['建廠', '擴廠', '廠務', '無塵室', '統包', 'EPC', '科技廠', '半導體', '面板', '帆宣', '漢唐', '亞翔', '特氣', '管路'])
-        if overlay.role_name == 'mep-design':
-            has_mep_role = any(kw in (desired + work_text).upper() for kw in ['機電', 'MEP', '空調', '消防', '電力', '水處理', '水電', '廠務', '管線'])
-        else:
-            has_mep_role = any(kw in (desired + work_text).upper() for kw in ['機電', 'BIM', 'MEP', '空調', '消防', '電力', '水處理', '水電', '廠務', '管線'])
+        mep_kws = ['機電', 'MEP', '空調', '消防', '電力', '水處理', '水電', '廠務', '管線'] if overlay.role_name == 'mep-design' else ['機電', 'BIM', 'MEP', '空調', '消防', '電力', '水處理', '水電', '廠務', '管線']
+        has_mep_role = any(kw in (desired + titles_text).upper() for kw in mep_kws)
 
         # v10.2 (2026-05-27): E4 escape - 全球頂級工程顧問 + PCM/專案管理經歷 → 豁免
         # 李承翰回饋：WSP/科進栢誠 PCM 建築專業經歷被誤判為純土建
@@ -602,6 +711,15 @@ def score_candidate(c, overlay=None):
         elif not (has_factory or has_mep_role):
             return 0, ["排除(E4): 土建/營造無機電建廠經驗"], True
 
+        # E4b: G1組(土木建築)候選人，若其實質機電/MEP相關年資累計 < 2 年，視為偏向工務/土建且機電經驗不足，直接排除
+        mep_keywords = ['機電', 'MEP', '空調', 'HVAC', '消防', '電力', '水處理', '水電', '廠務', '管線', '弱電', '儀電', 'BIM', 'Revit', '漢科', '亞翔', '漢唐', '帆宣', '洋基', '信紘科', '擎邦', '同開', '千附', '聖暉', '朋億', '泰創']
+        mep_years = 0.0
+        for line in c['work_lines']:
+            if any(kw in line.upper() for kw in mep_keywords):
+                mep_years += get_line_years(line)
+        if mep_years < 2.0:
+            return 0, [f"排除(E4b): 土建背景但機電/MEP實務經驗僅{mep_years:.1f}年(不足2年)"], True
+
     # E5b: 環境/環工純採樣人員且無實質 MEP 建廠/設施經驗防呆
     is_env_bg = any(kw in edu for kw in ['環境工程', '環工']) or any(kw in work_text for kw in ['採樣', '監測', '檢測'])
     if is_env_bg:
@@ -612,13 +730,41 @@ def score_candidate(c, overlay=None):
     # E5: 機電/第三區塊人員若屬製程/製造/非建廠類
     if c['group'] in ('G2_機電相關', 'G3_環境', 'G3_其他'):
         if any(kw in work_and_desired for kw in NON_CONSTRUCTION_MANUFACTURING):
-            has_facility_mep = any(kw in work_and_desired for kw in ['廠務', '建廠', '擴廠', '空調', '消防', '水處理', '無塵室', '特氣', '營造', '建設', '中鼎', '機電', '配電', '水電', '電力', '電機', '儀電', '電力系統', '案場', '帆宣', '漢科', '大鼎'])
+            # Define low-skill/repair keywords to clean the work text
+            low_skill_repair = ['技術員', '維修員', '修繕', '水電工', '學徒', '助理', '作業員', '操作員', '物業', '保全', '電器行', '冷氣行', '飯店', '酒店', '門市', '店員']
+            clean_work_text_for_mep = '\n'.join([l for l in c['work_lines'] if not any(k in l for k in low_skill_repair)])
+            has_facility_mep = any(kw in clean_work_text_for_mep for kw in ['機電', '電力', '電機', '水電', '儀電', '電力系統']) or any(kw in work_and_desired for kw in ['廠務', '建廠', '擴廠', '空調', '消防', '水處理', '無塵室', '特氣', '營造', '建設', '中鼎', '配管', '配電', '案場', '帆宣', '漢科', '大鼎'])
             has_vip_co = any(kw in full for kw in PREMIUM_COMPANIES)
             if not has_facility_mep and not has_vip_co:
                 return 0, ["排除(E5): 偏向製程/製造/非建廠屬性"], True
 
     # E7: 工安/環安衛人員（非機電工程/土建）
     ehs_hits = [kw for kw in EHS_KEYWORDS if kw in desired or kw in first_work]
+    
+    # v10.7: 判斷是否為純安全/安衛/工安履歷 (丁紀診/鄭清欽)
+    # 若所有工作經歷的職稱均含 EHS 關鍵字且不含 MEP/工程實質字眼，則視為純 EHS 人選，不可豁免 E7
+    is_pure_ehs = False
+    if ehs_hits and c.get('work_lines'):
+        ehs_titles_count = 0
+        all_titles_pure_ehs = True
+        ehs_kws = ['環安', '職安', '工安', '勞安', '安衛', 'EHS', '安全衛生', '環境工程']
+        mep_kws = ['廠務', '機電', '電機', '空調', '消防', '水電', '配電', '電力', '儀電', 'BIM', 'Revit', '給排水', '水處理']
+        for line in c['work_lines']:
+            cleaned = re.sub(r'^\d{4}/\d{2}(~\d{4}/\d{2})?\s*', '', line)
+            cleaned = re.sub(r'\s*\(.*?\)$', '', cleaned)
+            parts = cleaned.split()
+            if parts:
+                title = parts[-1]
+                has_ehs = any(kw in title for kw in ehs_kws)
+                has_mep = any(kw in title for kw in mep_kws)
+                if has_ehs and not has_mep:
+                    ehs_titles_count += 1
+                else:
+                    all_titles_pure_ehs = False
+            else:
+                all_titles_pure_ehs = False
+        is_pure_ehs = all_titles_pure_ehs and ehs_titles_count > 0
+
     if ehs_hits:
         # v10.3 (2026-05-27): 對 space-manager，E7 豁免必須 work_text 含「機電」或 MEP 字眼
         # 簡瑞辰回饋（環安出身，work_text 全是品管/環工）/ 吳鴻彰回饋（工安出身，work_text 純廠務維護無機電）
@@ -631,6 +777,10 @@ def score_candidate(c, overlay=None):
             # 有機電字眼則仍走 default 豁免流程（不立即 return）
 
         # default 角色（或 space-manager 通過機電 strict 檢查後）保留既有豁免邏輯
+        # v10.7: 若為純 EHS 履歷，不可豁免，直接排除
+        if is_pure_ehs:
+            return 0, [f"排除(E7 純安衛): 歷任職稱均為純工安/安衛人員且無機電實質職稱={','.join(ehs_hits[:2])}"], True
+
         has_epc = any(kw in full for kw in PREMIUM_COMPANIES + ['中鼎', '漢科', '帆宣', '泰興', '達欣', '潤弘'])
         has_non_ehs_desired = desired and any(kw in desired for kw in ['廠務', '機電', '電機', '電力', '空調', '消防', '水處理', '水電', '工程師', '監造', '品管', '經理', '設備師', '維護'])
         if has_epc or has_non_ehs_desired:
@@ -659,7 +809,10 @@ def score_candidate(c, overlay=None):
     residential_hits = [kw for kw in ['住宅', '住宅工程', '透天', '別墅'] if kw in work_and_desired]
     if residential_hits:
         has_factory = any(kw in work_and_desired for kw in ['建廠', '擴廠', '廠務', '無塵室', '統包', '科技廠', '半導體'])
-        if not has_factory:
+        # v10.5: E9 公共工程與顧問公司豁免 (陳國卿 escape)
+        has_infra = any(kw in full for kw in ['工程顧問', '捷運', '機場', '監獄', '醫院', '軌道', '高鐵', '鐵路'])
+        has_premium = any(kw in full for kw in PREMIUM_COMPANIES)
+        if not has_factory and not has_infra and not has_premium:
             return 0, [f"排除(E9): 偏向住宅工程={','.join(residential_hits[:2])}"], True
 
     # E10: 純水電勞務排除 (針對履歷單薄之水電工務)
@@ -668,6 +821,17 @@ def score_candidate(c, overlay=None):
     has_thick = any(k in work_and_desired for k in ['規劃', '建廠', '新建', '擴廠', '專案', '統包', '無塵室', '廠務', '發包', '圖面', '監造'])
     if plumber_only and not has_thick:
         return 0, ["排除(E10): 履歷單薄之純水電/勞務工作"], True
+
+    # E10b: 水電行/水電工歷史累積排除 (v11.1, 2026-06-23)
+    # 累計水電行/水電工務/水電人員年資 >= 3年，且實質機電設計/工程管理年資 < 3年者排除
+    # 排除謝勝淮樣本：水電行 + 水電工經歷過長但無實質 MEP 設計/工程管理深度
+    plumber_kws = ['水電行', '水電工程行', '水電工', '水電人員']
+    plumber_years = sum(get_line_years(l) for l in c['work_lines'] if any(k in l for k in plumber_kws))
+    if plumber_years >= 3.0:
+        mep_eng_kws = ['設計', '規劃', '無塵室', '建廠', 'EPC', '中鼎', '工程師', '主管', '課長', '經理', '主任']
+        mep_eng_years = sum(get_line_years(l) for l in c['work_lines'] if any(k in l for k in mep_eng_kws) and not any(k in l for k in plumber_kws))
+        if mep_eng_years < 3.0:
+            return 0, [f"排除(E10b): 水電行/水電工累計{plumber_years:.1f}年，且實質工程管理年資僅{mep_eng_years:.1f}年(不足3年)"], True
 
     # E11: 純採購/發包/稽核排除 (無機電/建廠實務)
     procurement_only = any(kw in desired + first_work for kw in ['採購', '發包', '稽核', '能源管理'])
@@ -679,10 +843,19 @@ def score_candidate(c, overlay=None):
     # E17: 純科技研發/軟體/業務/光電人員排除
     fatal_rd_software_hits = [kw for kw in ['軟硬體', '軟體', 'SQA', '演算法', 'BIOS', 'IC設計', '晶片', '前端', '後端', '全端', 'App開發', '業務', '光電', '研發', 'RD', '3d artist'] if kw in work_and_desired.lower()]
     if '業務' in fatal_rd_software_hits:
-        # 豁免過往曾有業務經歷但已成功轉型為機電工程師/主任者
-        has_transitioned = any(kw in first_work or kw in desired for kw in ['工程師', '主任', '副理', '經理', '專案', '機電', '弱電'])
+        # 豁免過往曾有業務經歷但近期已為實質工程/廠務/資深管理職者
+        # v11.4 (Q2): 擴充資深管理職稱(副處長/處長/協理/廠長/部長/課長/主管等)與 desired 含廠務/建廠，
+        #             並加 first_is_sales 守門(最新職務本身是業務者不予豁免)。
+        #             修正古凱明——11 年廠務+副處長，僅一段 11 年前 6 個月業務卻遭 E17 誤殺。
+        transition_titles = ['工程師', '主任', '副理', '經理', '專案', '機電', '弱電',
+                             '副處長', '處長', '協理', '廠長', '部長', '課長', '主管', '副總', '總監']
+        first_is_sales = ('業務' in first_work) or ('sales' in first_work.lower())
+        has_transitioned = (not first_is_sales) and (
+            any(kw in first_work for kw in transition_titles)
+            or any(kw in desired for kw in transition_titles + ['廠務', '建廠'])
+        )
         if has_transitioned:
-            reasons.append("E17業務豁免: 雖過往有業務經歷，但近期已成功轉型為工程師或管理職")
+            reasons.append("E17業務豁免: 最新職務為實質工程/廠務/資深管理職(非業務)，舊業務經歷不排除")
             fatal_rd_software_hits.remove('業務')
             
     if '光電' in fatal_rd_software_hits:
@@ -738,7 +911,7 @@ def score_candidate(c, overlay=None):
         return 0, ["排除: 用戶指定無明確建廠/經歷單薄/非工程專精"], True
 
     # E12: 大樓物業/商場維護防呆
-    property_hits = [kw for kw in ['公寓大廈', '物業', '保全', '百貨', '商場', '量販', '社區管理', '管委會', '京站', '微風', '購物中心', '齊家'] if kw in work_and_desired]
+    property_hits = [kw for kw in ['公寓大廈', '物業', '保全', '百貨', '商場', '量販', '社區管理', '管委會', '京站', '微風', '購物中心', '齊家', '酒店', '飯店', '大酒店', '大樓', '台灣大哥大', '中華電信', '遠傳電信', '遠傳'] if kw in work_and_desired]
     if property_hits:
         # 修正(陳信吉 E12 漏洞)：若最新一份工作即為物業/大樓機電/總務，且無近期「建廠/無塵室/統包/EPC」等核心營造實績，直接排除
         is_latest_property = any(kw in first_work for kw in ['物業', '大樓', '齊家', '總務', '樓管', '大廈'])
@@ -747,9 +920,83 @@ def score_candidate(c, overlay=None):
             if not has_active_construction:
                 return 0, ["排除(E12): 最新工作偏向物業/大樓維護與總務"], True
 
-        has_factory = any(kw in work_and_desired for kw in ['建廠', '擴廠', '廠務', '無塵室', '統包', '科技廠', '半導體'])
-        if not has_factory:
-            return 0, [f"排除(E12): 大樓物業/商場維護={','.join(property_hits[:2])}"], True
+        # v10.5: E12 歷史物業經歷豁免 (吳柏瑢 escape)
+        # 若最新工作經歷為實質工程/管理職，且物業關鍵字僅存在於較舊的歷史經歷中（不在 desired 和 first_work 中），則豁免
+        # v11.1 限制: 額外要求工作經歷中需包含建廠/設計/規劃等核心工程關鍵字，排除純建築維護管理者（賴培恩樣本）
+        strong_eng_titles = ['工程師', '主任', '主管', '副理', '經理', '專案', '廠務', '監造', '監工', '技師', '機電長']
+        has_strong_first_work = any(t in first_work for t in strong_eng_titles) or ('長' in first_work and any(kw in first_work for kw in ['工程', '營造', '機電', '廠務']))
+        construction_depth_kws = ['建廠', '擴廠', '設計', '規劃', '無塵室', 'EPC', '統包', '施工圖', 'BIM', 'Revit', '監造', '監工', '機電', '電機', '消防']
+        has_construction_depth = any(kw in work_text for kw in construction_depth_kws)
+        if has_strong_first_work and has_construction_depth:
+            exempted_property_hits = []
+            for kw in list(property_hits):
+                not_in_desired_or_first = (kw not in desired) and (kw not in first_work)
+                if not_in_desired_or_first:
+                    exempted_property_hits.append(kw)
+                    property_hits.remove(kw)
+            if exempted_property_hits:
+                reasons.append(f"E12 歷史物業經歷豁免: {','.join(exempted_property_hits)} 僅存在於舊歷史經歷中，且最新工作為實質工程/管理職")
+
+        if property_hits:
+            has_factory = any(kw in work_and_desired for kw in ['建廠', '擴廠', '廠務', '無塵室', '統包', '科技廠', '半導體'])
+            if not has_factory:
+                return 0, [f"排除(E12): 大樓物業/商場維護={','.join(property_hits[:2])}"], True
+
+    # E12b: 累計大樓物業/飯店維護年資 >= 3年 且 佔總年資比例 >= 50%，視為偏重大樓物業/總務庶務，無技術深度，直接排除
+    property_kws = ['物業', '公寓', '大廈', '保全', '大樓', '樓管', '飯店', 'HOTEL', '酒店', '商旅', '商場', '百貨', '量販', '維保', '維護人員', '物管', '機電管理', '建經', '建築經理']
+    prop_years = sum(get_line_years(l) for l in c['work_lines'] if any(k in l.upper() for k in property_kws))
+    total_years = sum(get_line_years(l) for l in c['work_lines'])
+    if total_years > 0:
+        prop_ratio = prop_years / total_years
+        if prop_years >= 3.0 and prop_ratio >= 0.5:
+            return 0, [f"排除(E12b): 大樓物業/飯店維護經歷過長(累計{prop_years:.1f}年, 佔比{prop_ratio*100:.0f}%)，偏向總務庶務運維"], True
+
+    # E12c: 非營建 O&M、安衛、品管排除 (v11.1, 2026-06-23)
+    # 經歷含物業管理/維護、安全(工安/勞安/安衛)、或品保/品管，且全履歷無工程規劃字眼者排除
+    # 排除莊鎰鴻樣本：保全/品管背景無任何建廠/設計/規劃等工程核心關鍵字
+    om_safety_qc_kws = ['保全', '倉管', '勞安', '工安', '職安', '安衛', '品保', '品管']
+    has_om_safety_qc = any(kw in work_and_desired for kw in om_safety_qc_kws)
+    if has_om_safety_qc:
+        construction_design_kws = ['建廠', '擴廠', '設計', '規劃', '無塵室', 'EPC', '中鼎', '施工圖', 'Revit', 'BIM']
+        has_construction_depth = any(kw in work_and_desired for kw in construction_design_kws)
+        if not has_construction_depth:
+            # 豁免：若有知名 EPC 公司經歷或實質機電工程職稱則不排除
+            has_premium = any(kw in full for kw in PREMIUM_COMPANIES)
+            has_eng_title = any(kw in first_work for kw in ['工程師', '主任', '副理', '經理', '技師', '廠務', '監造'])
+            if not has_premium and not has_eng_title:
+                om_hits = [kw for kw in om_safety_qc_kws if kw in work_and_desired]
+                return 0, [f"排除(E12c): 非營建O&M/安衛/品管({','.join(om_hits[:2])})且全履歷無工程規劃字眼"], True
+
+    # E12d: 傳統水電行/電器行/空調維修/修繕人員年資累積排除 (v11.3, 2026-07-02)
+    # 累積於水電行、電器行、冷氣行、修繕、維修、大樓物業之年資 >= 3年，且實質機電設計/工程管理年資 < 3年者排除
+    repair_kws = ['電器行', '冷氣行', '維修員', '修繕', '水電工', '學徒', '物業', '公寓', '大廈', '大樓', '飯店', '酒店']
+    repair_years = sum(get_line_years(l) for l in c['work_lines'] if any(k in l for k in repair_kws))
+    if repair_years >= 3.0:
+        mep_eng_kws = ['設計', '規劃', '無塵室', '建廠', 'EPC', '中鼎', '工程師', '主管', '課長', '經理', '主任']
+        mep_eng_years = sum(get_line_years(l) for l in c['work_lines'] if any(k in l for k in mep_eng_kws) and not any(k in l for k in repair_kws) and not any(k in l.lower() for k in ['電控', '自動控制', '自動化', 'plc', '研發', 'rd', '測試', '設備', '技術員', '操作員', '作業員']))
+        if mep_eng_years < 3.0:
+            return 0, [f"排除(E12d): 傳統水電/電器行/修繕/物業年資累計{repair_years:.1f}年，且實質工程管理年資僅{mep_eng_years:.1f}年(不足3年)"], True
+
+    # E12e: 產業類別防線 (v11.4, Q1, 2026-07-02)
+    # 針對物業/飯店/休閒/不動產產業維修主軸漏網 (陳峰/張哲耀型)。
+    # 註：產業類別欄僅存在於完整履歷(/review 與歷史 CSV)，ANALYSIS.md 摘要無此欄，故本規則
+    #     主要在 /review 深度生效；/filter 摘要層由 E6 補強的低階運維內容詞輔助攔截。
+    industry_lines = [l for l in full.split('\n') if l.strip().startswith('產業類別')]
+    if industry_lines:
+        hospitality_kws = ['旅館', '住宿', '休閒', '餐旅', '不動產', '百貨', '遊樂', '購物', '餐館', '飯店', '博弈', '觀光']
+        hosp_count = sum(1 for l in industry_lines if any(k in l for k in hospitality_kws))
+        if hosp_count > 0 and hosp_count * 2 >= len(industry_lines):
+            has_build = any(kw in full for kw in ['建廠', '擴廠', '無塵室', 'EPC', '統包', '半導體', '科技廠', '設計定版', '系統建置'])
+            if not has_build:
+                return 0, [f"排除(E12e): 產業主軸為旅館/不動產/休閒維運({hosp_count}/{len(industry_lines)}段)且無建廠信號"], True
+
+    # E6 補強: 代操/打雜等低階運維內容防呆 (v11.4, Q1)
+    # 摘要層(ANALYSIS.md)與完整履歷皆可掃到的低階運維內容詞，補 E12e 在 /filter 路徑的覆蓋缺口
+    low_om_content = ['代操', '打雜', '什麼都修', '雜修', '雜工']
+    if any(k in full for k in low_om_content):
+        has_build_depth = any(kw in work_and_desired for kw in ['建廠', '擴廠', '無塵室', 'EPC', '統包', '設計', '規劃', '監造', '監工'])
+        if not has_build_depth:
+            return 0, ["排除(E6補強): 工作內容為代操/打雜等低階運維且無建廠設計深度"], True
 
     # E13: 服務業轉型且工程經歷單薄防呆
     has_thick_work = any(k in work_text for k in ['規劃', '建廠', '新建', '擴廠', '專案', '統包', '無塵室', '廠務', '發包', '圖面', '監造'])
@@ -769,7 +1016,13 @@ def score_candidate(c, overlay=None):
     has_low_jobs = any(kw in work_text for kw in low_level_jobs)
     
     # 計算工程經歷行數
-    eng_lines = [l for l in c['work_lines'] if any(k in l for k in ['工程', '機電', '廠務', '設計', 'BIM', 'bim', '空調', '消防', '製圖', '繪圖'])]
+    # v11.2: 具備對口機電/機械/環工學歷時，將技術維護/運維崗位納入工程經歷行統計(避開對技術運維人員的防呆誤殺)
+    eng_kws = ['工程', '機電', '廠務', '設計', 'BIM', 'bim', '空調', '消防', '製圖', '繪圖']
+    has_mep_degree = any(k in edu for k in ['電機', '機械', '冷凍空調', '機電', '環工', '環境工程', '化工', '化學'])
+    if has_mep_degree:
+        eng_kws += ['維護', '維修', '保養', '污水', '設備']
+    eng_lines = [l for l in c['work_lines'] if any(k in l for k in eng_kws)]
+    
     if has_low_jobs and len(eng_lines) <= 2 and not any(kw in work_and_desired for kw in ['規劃', '建廠', '新建', '擴廠']):
         return 0, ["排除(E15): 工程經歷過短且夾雜大量非專業經歷"], True
         
@@ -777,13 +1030,35 @@ def score_candidate(c, overlay=None):
         if has_low_jobs:
             return 0, ["排除(E15): 缺乏核心機電實務且經歷混雜"], True
 
+    # E15 加強版: 針對 default/mep-design 角色
+    if overlay.role_name == 'default':
+        # Strip out O&M/repair/hotel/telecom lines to check if they have real MEP design/construction substance
+        repair_kws = ['電器行', '冷氣行', '維修員', '修繕', '水電工', '學徒', '物業', '公寓', '大廈', '大樓', '飯店', '酒店', '台灣大哥大', '中華電信', '遠傳']
+        clean_work_lines = [l for l in c['work_lines'] if not any(k in l for k in repair_kws)]
+        clean_work_text = '\n'.join(clean_work_lines)
+        
+        mep_subsystems = ['機電', '空調', '消防', '電力', '給排水', '水處理', '配電', '水電', '配管', '管線']
+        has_other_mep = any(sub in (clean_work_text).upper() for sub in mep_subsystems)
+        has_facility = '廠務' in clean_work_text
+        # v11.4 (Q3): 建廠信號豁免詞擴充(發包/驗收/工進/監造/系統建置/統包)，並掃描完整履歷內容——
+        # 周憲章的建廠證據在「工作內容」描述行(建廠空調製程系統工進/規劃發包監工驗收)而非職稱行，
+        # 原本只掃 clean_work_text(職稱行)導致遭 E15 誤殺。
+        build_signal_kws = ['設計', '建廠', '擴廠', 'EPC', 'BIM', 'Revit', '發包', '驗收', '工進', '監造', '監工', '系統建置', '無塵室', '統包']
+        has_design_construction = any(kw in clean_work_text for kw in build_signal_kws) \
+            or any(kw in full for kw in ['建廠', '擴廠', '無塵室', 'EPC', '統包', '系統建置', '設計定版'])
+        if has_facility and not has_other_mep and not has_design_construction:
+            return 0, ["排除(E15): 純廠務維運且缺乏其他機電子系統及建廠設計經歷"], True
+
     # E16: 機電整合/自動控制/航太等非廠房設施防呆
-    automation_hits = [kw for kw in ['機電整合', '自動化設備', '自動控制', 'PLC', '電控', '航太', '航空', ' cnc', 'CNC'] if kw in work_and_desired]
+    automation_hits = [kw for kw in ['自動化', '機電整合', '自動化設備', '自動控制', 'PLC', '電控', '航太', '航空', ' cnc', 'CNC', '太陽能', '光電', '電梯', '水電行'] if kw in work_and_desired]
     if automation_hits:
         # 必須要有廠務或建廠相關的明確設施關鍵字才能豁免
+        # v11.3: 限制解禁白名單，移除機電、電力、電機
         has_real_facility = any(kw in work_and_desired for kw in ['廠務', '建廠', '無塵室', '空調', '水電', '消防', '水處理']) or any(kw in full for kw in ['台積', '聯電', '美光', '日月光', '中鼎', '漢唐', '帆宣', '泰創', '聖暉'])
         if not has_real_facility:
-            is_all_short_transition = True
+            # Only allow short transition if they actually have automation experience in their work history
+            has_auto_work = any(any(kw in line for kw in automation_hits) for line in c['work_lines'])
+            is_all_short_transition = has_auto_work
             mep_core_segments = 0
             for line in c['work_lines']:
                 line_has_auto = any(kw in line for kw in automation_hits)
@@ -795,11 +1070,234 @@ def score_candidate(c, overlay=None):
                     is_mep_core = any(kw in line.upper() for kw in ['機電', '監造', '監工', '廠務', '空調', '消防', '電力', '電力系統', '專案經理', '電機工程師'])
                     if is_mep_core:
                         mep_core_segments += 1
-            if is_all_short_transition and mep_core_segments >= 2:
+            if is_all_short_transition and mep_core_segments >= 2 and has_auto_work:
                 reasons.append(f"E16短暫過渡期豁免: {','.join(automation_hits)} 經歷皆小於1年且有{mep_core_segments}段機電監造主軸")
                 has_real_facility = True
         if not has_real_facility:
             return 0, [f"排除(E16): 偏向自動化/製造/航太({','.join(automation_hits[:2])})"], True
+
+    # Helper to check if a candidate is a frequent jumper (having recent jumps all < 1 year)
+    def _is_frequent_jumper(work_lines):
+        if not work_lines:
+            return False
+        check_len = min(3, len(work_lines))
+        if check_len < 2:
+            return False
+        for line in work_lines[:check_len]:
+            yrs = get_line_years(line)
+            if yrs >= 1.0:
+                return False
+        return True
+
+    # E20c: 化妝/文學/外語/餐飲/觀光/護理/行銷學歷且無厚實字眼
+    if overlay.role_name == 'default':
+        low_tech_majors = ['化妝', '文學', '外語', '日語', '英語', '語言', '餐飲', '觀光', '護理', '行銷', '哲學', '人文']
+        has_low_tech_major = any(m in edu for m in low_tech_majors)
+        thick_kws = ['規劃', '建廠', '新建', '擴廠', '專案', '統包', '無塵室', '廠務', '發包', '圖面', '監造', '設計']
+        has_thick = any(k in work_and_desired for k in thick_kws)
+        if has_low_tech_major and not has_thick:
+            return 0, ["排除(E20c): 非工程科系且工作中缺乏建廠核心實務"], True
+
+    # E20d: 所有經歷皆為工讀/實習/PT/兼職/助理/包裝/作業員/技術員/中工/半技/學徒/點工/雜工
+    if overlay.role_name == 'default' and len(c['work_lines']) >= 1:
+        low_skill_terms = ['工讀', '實習', 'PT', '兼職', '助理', '包裝', '作業員', '技術人員', '技術員', '中工', '半技', '學徒', '點工', '雜工', '助手']
+        all_low_skill = True
+        for line in c['work_lines']:
+            # v11.2: 具備電氣配線/繪圖等實質技術經歷，不視為 low-skill
+            has_technical_skill = any(t in line for t in ['配線', '電氣', '繪圖', '工程', '設計', 'BIM', 'Revit'])
+            if not any(t in line for t in low_skill_terms) or has_technical_skill:
+                all_low_skill = False
+                break
+        if all_low_skill:
+            return 0, ["排除(E20d): 經歷皆為低階打工、實習或助理工作"], True
+
+    # E21: default (MEP) 短期純建模防呆
+    if overlay.role_name == 'default' and len(c['work_lines']) >= 1:
+        recent_lines = c['work_lines'][:4]
+        is_e21 = True
+        for line in recent_lines:
+            yrs = get_line_years(line)
+            has_modeling = any(tok in line for tok in BIM_TOKENS) or any(tok in line for tok in MODELING_TERMS)
+            has_substance = any(tok in line for tok in ['設計工程', '設計', '規劃', '整合', '廠務', '統包', '建廠'])
+            if yrs >= 2.0 or not has_modeling or has_substance:
+                is_e21 = False
+                break
+        if is_e21 and len(recent_lines) > 0:
+            return 0, ["排除(E21): 近期經歷均為短期純建模"], True
+
+    # E22: default (MEP) 零 MEP 信號防呆
+    if overlay.role_name == 'default':
+        has_mep_substance = any(tok in work_and_desired for tok in MEP_SUBSTANCE_TOKENS)
+        has_bim_sig = any(tok in work_and_desired.upper() for tok in ['BIM', 'REVIT', 'NAVISWORKS'])
+        if not has_mep_substance and not has_bim_sig:
+            return 0, ["排除(E22): 零MEP與BIM信號"], True
+
+    # E23: 純結構/土木技師軌跡排除
+    if overlay.role_name == 'default':
+        structure_titles = ['土木技師', '結構技師', '大地工程', '結構分析師']
+        if any(t in desired for t in structure_titles):
+            structure_job_count = sum(1 for line in c['work_lines'] if any(t in line for t in ['結構', '大地']))
+            mep_strict_tokens = ['機電', 'HVAC', '空調', '消防', '配電', '給排水', 'MEP', '廠務', '水處理', '建廠', '變電', '高低壓', 'UPS', '電力系統']
+            has_mep_strict = any(t in full for t in mep_strict_tokens)
+            if structure_job_count >= 2 and not has_mep_strict:
+                return 0, ["排除(E23): 純結構/土木技師且無MEP實質經歷"], True
+
+    # E24: 近期軌跡偏離 MEP
+    if overlay.role_name == 'default' and len(c['work_lines']) >= 2:
+        recent_titles = ['工地主任', '工地副主任', '工地負責人', '工地工程師', '工務主任', '領班']
+        desired_civil_titles = ['營建工程師', '土木工程師', '土木技師', '結構技師', '結構工程師']
+        mep_kws = ['機電', '空調', '消防', '電力', '給排水', '水處理', '廠務', 'MEP', 'BIM', 'Revit']
+        
+        first_two_lines = c['work_lines'][:2]
+        recent_match = True
+        for line in first_two_lines:
+            has_recent_title = any(t in line for t in recent_titles)
+            has_mep = any(k in line.upper() for k in mep_kws)
+            if not has_recent_title or has_mep:
+                recent_match = False
+                break
+                
+        desired_match = any(t in desired for t in desired_civil_titles) and not any(k in desired.upper() for k in mep_kws)
+        if recent_match and desired_match:
+            return 0, ["排除(E24): 近期軌跡偏離MEP且希望職稱為純土建"], True
+
+    # E25: 在學中且無台灣正式公司
+    if '就學中' in edu:
+        has_company = any('公司' in line for line in c['work_lines'])
+        if not has_company:
+            return 0, ["排除(E25): 在學中且無正式公司經歷"], True
+
+    # E26: 履歷極度單薄缺乏實質深度
+    if overlay.role_name == 'default':
+        thick_kws = ['規劃', '建廠', '新建', '擴廠', '專案', '統包', '無塵室', '發包', '圖面', '監造', '設計', 'BIM', 'Revit']
+        has_thick = any(k in work_and_desired for k in thick_kws)
+        has_premium = any(k in full for k in PREMIUM_COMPANIES)
+        # v10.5: E26 management role & multiple jobs exemption (林帛融 escape)
+        has_mgmt = any(k in work_and_desired for k in ['主任', '主管', '經理', '副理', '總監', '協理'])
+        # v11.2: 具備對口科系背景且為長期領班者豁免 (林耿輝 rescue)
+        has_ee_me_hvac_degree = any(k in edu for k in ['電機', '機械', '冷凍空調', '機電'])
+        has_eng_desired = any(k in desired for k in ['工程師', '主任', '主管'])
+        total_yrs = sum(get_line_years(l) for l in c['work_lines'])
+        is_long_foreman = '領班' in work_text and total_yrs >= 5.0 and has_ee_me_hvac_degree and has_eng_desired
+        # v11.2: 若為工程長/主任/經理等資深領導職，且年資達5年以上者豁免 (徐強 rescue)
+        has_senior_lead_first = any(k in first_work for k in ['機電長', '機電主任', '廠務主任', '工務主任', '專案主任', '工程主任', '機電經理', '廠務經理', '工務經理', '專案經理', '工程經理']) or (any(k in first_work for k in ['主任', '經理']) and any(kw in first_work for kw in ['機電', '工程', '廠務', '工務', '專案', '施工', '監造', '水電', '空調'])) or ('長' in first_work and any(kw in first_work for kw in ['機電', '工程', '廠務']))
+        # v11.2: 具備對口科系且為長期資深技術/工程人員(年資達5年以上且 desired/work_text 包含電機/機電/電氣/電控/配線)者豁免 (楊智中 rescue)
+        is_long_tech_staff = total_yrs >= 5.0 and has_ee_me_hvac_degree and any(k in work_and_desired for k in ['電機', '機電', '電氣', '電控', '配線'])
+        if not has_thick and not has_premium and not (has_mgmt and len(c['work_lines']) >= 3) and not is_long_foreman and not (has_senior_lead_first and total_yrs >= 5.0) and not is_long_tech_staff:
+            return 0, ["排除(E26): 履歷極度單薄缺乏實質技術深度"], True
+
+    # E27: 建築背景跨足機電且頻繁跳槽
+    if overlay.role_name == 'default':
+        is_arch_bg = any(kw in edu for kw in ['建築', '土木', '營建'])
+        if is_arch_bg and _is_frequent_jumper(c['work_lines']):
+            return 0, ["排除(E27): 建築背景且近期頻繁跳槽"], True
+
+    # E28: 非工程背景且僅為繪圖員
+    if overlay.role_name == 'default':
+        has_eng_edu = any(kw in edu for kw in EDU_KEYWORDS)
+        if not has_eng_edu:
+            is_drawing_job = any(t in first_work or t in desired for t in ['繪圖', '製圖', '建模'])
+            if is_drawing_job:
+                return 0, ["排除(E28): 非工程背景且擔任繪圖/建模人員"], True
+
+    # E28b: 專業背景但過多為繪圖工程師/建模員
+    if overlay.role_name == 'default':
+        drawing_terms = ['繪圖', '建模', '製圖', '建模員', '繪圖員', '繪圖工程師', '製圖員', 'BIM建模員']
+        first_is_drawing = any(t in first_work for t in drawing_terms)
+        # v11.2: 若最新經歷同時包含實質技術(如配線/裝配/施工/監造等)，不視為純繪圖工作
+        if first_is_drawing and any(t in first_work for t in ['配線', '裝配', '施工', '監造', '監工', '廠務']):
+            first_is_drawing = False
+        if first_is_drawing:
+            drawing_count = sum(1 for line in c['work_lines'] if any(t in line for t in drawing_terms))
+            if drawing_count >= 2:
+                # v11.2: 若最新繪圖工作位於 PREMIUM_COMPANIES (如 帆宣)，視為頂級廠房建廠建模核心人才，予以豁免
+                is_premium_current = any(kw in first_work for kw in PREMIUM_COMPANIES)
+                if is_premium_current:
+                    reasons.append("E28b 豁免: 最新繪圖工作位於知名大廠/PREMIUM_COMPANIES")
+                else:
+                    return 0, [f"排除(E28b): 最新工作為繪圖且累計有{drawing_count}次繪圖經歷"], True
+
+    # E29: 純BIM/繪圖且跳槽頻繁
+    if overlay.role_name == 'default':
+        is_bim_drawing = any(t in first_work or t in desired for t in BIM_TOKENS + MODELING_TERMS)
+        if is_bim_drawing and _is_frequent_jumper(c['work_lines']):
+            return 0, ["排除(E29): 純BIM/繪圖工作且頻繁跳槽"], True
+
+    # E30: 純設計/文商社科背景防護
+    non_eng_majors = ['工業設計', '大眾傳播', '外語', '日語', '英語', '語言', '政治', '社會', '企管', '行銷', '商業', '管理', '商學', '哲學', '人文']
+    has_non_eng_major = any(m in edu for m in non_eng_majors)
+    has_mep_civil_major = any(m in edu for m in ['機電', '電機', '土木', '機械', '空調', '冷凍', '消防', '給排水', '化工', '環工', '環境工程', '建築', '營建'])
+    
+    # v10.6 新增：實質轉型成功豁免
+    is_exempt_e30 = False
+    if has_non_eng_major and not has_mep_civil_major:
+        first_is_eng = any(k in first_work for k in ['工程', '機電', '廠務', '空調', '消防', '電力', '水電', '監造', '監工', '施工', '主任', '主管', '經理', '技師'])
+        eng_lines = [l for l in c['work_lines'] if any(k in l for k in ['工程', '機電', '廠務', '設計', 'BIM', 'bim', '空調', '消防', '製圖', '繪圖', '配管', '配電', '水電', '監造', '監工', '施工', '主任', '主管', '經理', '技師'])]
+        has_premium = any(kw in full for kw in PREMIUM_COMPANIES)
+        total_eng_years = sum(get_line_years(l) for l in eng_lines)
+        if first_is_eng and len(eng_lines) >= 2 and (total_eng_years >= 3.0 or has_premium):
+            is_exempt_e30 = True
+            reasons.append(f"E30轉型成功豁免: 非本科但最新工作為實質工程且有{len(eng_lines)}段工程經歷 (總年資{total_eng_years:.1f}年)")
+
+    if has_non_eng_major and not has_mep_civil_major and not is_exempt_e30:
+        return 0, ["排除(E30): 純設計/文商社科背景且無機電土木雙主修"], True
+
+    # E31: 偽專案/純業務防呆
+    fake_pm_titles = ['業務經理', '產品經理', '專案管理員', '營運管理師', '銷售代表']
+    is_fake_pm = any(t in first_work or t in desired for t in fake_pm_titles)
+    if is_fake_pm:
+        has_eng_practice = any(k in work_text for k in ['工程', '監造', '監工', '廠務', '機電', '施工', '設計', '規劃', '統包', 'BIM'])
+        if not has_eng_practice:
+            return 0, ["排除(E31): 偽專案/純業務且無實質工程實績"], True
+
+    # E31b: 長期業務/行政經歷偏離防呆
+    non_eng_years = 0
+    eng_years = 0
+    for line in c['work_lines']:
+        yrs = get_line_years(line)
+        is_non_eng = any(k in line for k in ['業務', '特助', '行政', '助理', '秘書', '採購', '總務', '銷售'])
+        is_eng = any(k in line.upper() for k in ['工程', '設計', '施工', '監造', '監工', '廠務', '機電', '空調', '消防', '電力', 'BIM', 'REVIT', '土木', '結構'])
+        if is_non_eng and not is_eng:
+            non_eng_years += yrs
+        elif is_eng:
+            eng_years += yrs
+    if non_eng_years >= 3.0 and eng_years < 1.5:
+        return 0, [f"排除(E31b): 長期業務/行政經歷且工程年資僅{eng_years:.1f}年"], True
+
+    # E32: 高齡且無機電/建廠實務防呆
+    age_num = 0
+    age_match = re.search(r'(\d+)', c['age'])
+    if age_match:
+        age_num = int(age_match.group(1))
+    if age_num >= 60:
+        has_mep_sig = any(tok in full for tok in MEP_SUBSTANCE_TOKENS)
+        has_bim_sig = any(tok in full.upper() for tok in ['BIM', 'REVIT', 'NAVISWORKS'])
+        if not has_mep_sig and not has_bim_sig:
+            return 0, ["排除(E32): 高齡且無機電或BIM實質經歷"], True
+
+    # E34: 短期最新工作限制歷史豁免 (v11.1, 2026-06-23)
+    # 若最新一份工作持任未滿 1.0 年，且該工作是候選人繞過排除條件（E19歷史豁免/E12歷史豁免）的唯一原因，
+    # 則必須檢查先前工作是否有至少一段非致命的實質工程經歷，否則仍排除。
+    # 排除顏銘村樣本：最新工作為測試工程師(半導體大廠)短於1年，靠此繞過E19但先前經歷全為非工程
+    if c['work_lines']:
+        first_work_years = get_line_years(c['work_lines'][0])
+        if first_work_years < 1.0:
+            # 檢查先前工作（work_lines[1:]）是否有至少一段實質工程經歷
+            prior_eng_kws = ['工程師', '主任', '副理', '經理', '專案', '廠務', '監造', '監工', '技師',
+                             '設計', '規劃', '機電', '空調', '消防', '水處理', '建廠', '擴廠']
+            prior_fatal_kws = ['倉管', '業助', '服務員', '銷售員', '外送員', '門市', '餐廳', '吧台',
+                               '作業員', '加油', '保全', '駐衛警', '工讀', '兼職', '服務人員',
+                               '水電工', '水電行', '水電人員', '雜工', '學徒', '半技', '點工']
+            prior_lines = c['work_lines'][1:]
+            has_prior_eng = False
+            for pl in prior_lines:
+                is_eng = any(k in pl for k in prior_eng_kws)
+                is_fatal = any(k in pl for k in prior_fatal_kws)
+                if is_eng and not is_fatal:
+                    has_prior_eng = True
+                    break
+            if not has_prior_eng and len(prior_lines) > 0:
+                return 0, [f"排除(E34): 最新工作持任僅{first_work_years:.1f}年，且先前經歷無實質工程背景"], True
 
     # --- 必要條件 M1: 職稱（分層計分）---
     # 核心關鍵字（機電/廠務/監造等）命中 = +10分，代表明確的領域對口
@@ -819,7 +1317,9 @@ def score_candidate(c, overlay=None):
     # --- 必要條件 M2: 產業 ---
     # v10.3 (2026-05-27): WORK_TEXT_ONLY_KEYWORDS 必須在 work_text 命中才算
     # 楊國清回饋：希望職稱寫「建廠」但工作經歷無實際建廠公司，被 keyword 灌水入選
-    m2_raw = [kw for kw in COMPANY_KEYWORDS if kw in full]
+    # 移除「建設」在「土建設計」、「營建設計」等相鄰產生的 false positive 匹配
+    full_for_company = re.sub(r'(土建|營建|建築|室內|裝修|估算)設計', '', full)
+    m2_raw = [kw for kw in COMPANY_KEYWORDS if kw in full_for_company]
     m2_hits = [kw for kw in m2_raw if kw not in WORK_TEXT_ONLY_KEYWORDS or kw in work_text]
     if m2_hits:
         score += 10
@@ -964,8 +1464,10 @@ def score_candidate(c, overlay=None):
 
     # 傳統重電降階: 僅命中傳統公司(中興電工/士林電機/東元)但無任何高科關鍵字
     # → 扣回 15 分，因為傳統重電(變電站/馬達)≠高科建廠(FAB/Utility)
+    # v11.2: 若同時具備其他知名大廠或顧問經歷(PREMIUM_COMPANIES)，豁免降階
     trad_hits = [kw for kw in TRADITIONAL_CONDITIONAL_COMPANIES if kw in full]
-    if trad_hits and not n17_hits:
+    has_premium_other_than_trad = any(kw in full for kw in PREMIUM_COMPANIES if kw not in TRADITIONAL_CONDITIONAL_COMPANIES)
+    if trad_hits and not n17_hits and not has_premium_other_than_trad:
         score -= 15
         reasons.append(f"傳統重電降階: {','.join(trad_hits[:2])}(無高科經驗) (-15)")
 
@@ -990,15 +1492,26 @@ def score_candidate(c, overlay=None):
     has_planning = any(k in work_and_desired for k in planning_keywords)
     
     if is_facility and not has_planning:
-        score -= 15
-        reasons.append("D3廠務防呆: 偏維護缺乏規劃整合 (-15)")
+        # v11.2: 具備機電/廠務學歷且具有實質設備維護經驗，不進行 D3 降分
+        has_mep_degree = any(k in edu for k in ['電機', '機械', '冷凍空調', '機電', '環工', '環境工程', '化工', '化學'])
+        if has_mep_degree and any(kw in work_text for kw in ['維護', '設備', '機電', '水電', '配線', '電控', '電機']):
+            pass
+        else:
+            score -= 15
+            reasons.append("D3廠務防呆: 偏維護缺乏規劃整合 (-15)")
 
     # D4: 製造端/測試端降階 (扣 15 分)
     # 針對測試、組裝、產線、加工、車廠等非建廠製造屬性
     mfg_penalty_keywords = ['測試', '產線', '組裝', '加工', '車廠', 'plc', 'smt', 'cnc']
     if any(k in work_and_desired.lower() for k in mfg_penalty_keywords):
-        score -= 15
-        reasons.append("D4製造降階: 偏向製造/測試端 (-15)")
+        # v11.2: 具備機電學歷且最新職稱為廠務/工程師/設備維護，不進行 D4 製造降分
+        has_mep_degree = any(k in edu for k in ['電機', '機械', '冷凍空調', '機電', '環工', '環境工程', '化工', '化學'])
+        first_is_facility = any(k in first_work for k in ['廠務', '工程師', '主任', '主管', '維護', '設備', '污水'])
+        if has_mep_degree and first_is_facility:
+            pass
+        else:
+            score -= 15
+            reasons.append("D4製造降階: 偏向製造/測試端 (-15)")
 
     # D5: 採購/內業防呆 (扣 15 分)
     # 如果職稱包含採購，但履歷中缺乏實質機電工程字眼
@@ -1019,6 +1532,14 @@ def score_candidate(c, overlay=None):
     if not has_thick and len(n23_hits) == 0:
         # score -= 15  # 取消嚴格扣分
         reasons.append("D6履歷單薄(待PDF判定降級)")
+
+    # D6b: 近期短期連跳加重扣分 (v11.4, Q4)
+    # 近 3 段工作全部任職未滿 1 年且無建廠厚度 → 穩定性存疑 (蔡明融型：2026 半年連跳 3 家)
+    if len(c['work_lines']) >= 3:
+        recent3_all_short = all(get_line_years(l) < 1.0 for l in c['work_lines'][:3])
+        if recent3_all_short and not has_thick:
+            score -= 20
+            reasons.append("D6b 短期連跳加重: 近3段全未滿1年且無建廠厚度 (-20)")
 
     # D7: BIM-only 降級（mep-design / space-manager overlay 啟用，反「BIM 外衣」核心規則）
     if overlay.enable_d7_bim_only:
@@ -1086,7 +1607,9 @@ def score_candidate(c, overlay=None):
             # space-manager 例外：同時命中空間 AND 法規 → 不扣（具備空間規劃 + 規範理解可救回）
             has_space = any(tok in work_and_desired for tok in SPACE_TOKENS)
             has_reg = any(tok in work_and_desired for tok in REGULATION_TOKENS)
-            if not (has_space and has_reg):
+            # 例外②: 具備 CSD/套圖/二次審圖能力不扣
+            has_csd = any(kw in work_and_desired.upper() for kw in ['CSD', '套圖', '審圖', '二次審圖'])
+            if not (has_space and has_reg) and not has_csd:
                 score -= 25
                 reasons.append(
                     f"D12 純建模人員: 建模段{related_segs}/{total_segs}, 純工程實質段{substance_segs_strict} (-25)"
