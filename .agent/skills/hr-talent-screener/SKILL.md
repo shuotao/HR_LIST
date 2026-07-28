@@ -13,10 +13,11 @@ description: 專門用於處理「104履歷候選人才篩選」。當使用者�
 ## ⚙️ 環境設定
 - **Python 路徑**：`D:\green-tools\python-3.14.2-embed-amd64\python.exe`
 - **工作目錄**：ANALYSIS.md 所在的專案資料夾
-- **參考文件**（三份，各有不同生命週期）：
+- **參考文件**（四份，各有不同生命週期）：
   - `references/screening_rules.md` — **純規則手冊**（跨批次永久有效，僅更新規則本身）
   - `references/iteration_log.md` — **疊代日誌**（歷史累積，每批次追加，不刪除）
   - `references/clear_RULE.md` — 三階段清洗規則定義
+  - `references/improve_record.md` — **/improve 品質稽核快照**（latest-only：每次 improve/重錄由 improve-recorder 整檔覆寫，非 append；與 iteration_log.md 的 append-only 相反）
 
 ## 📍 執行流程 (SOP)
 
@@ -39,11 +40,11 @@ D:\green-tools\python-3.14.2-embed-amd64\python.exe scripts/pipeline_clean.py <A
 使用 `scripts/screen_candidates.py` 對清洗後的 ANALYSIS.md 進行篩選：
 
 1. 解析每位候選人的完整資料區塊（姓名、年齡、學歷、希望職稱、工作經歷）。
-2. 依據 `references/screening_rules.md` 中的規則進行評分：
-   - 必要條件 (M1-M3)：至少命中一項才納入候選池
-   - 加分條件 (N1-N17；default/space-manager 啟用 N18；space-manager 額外啟用 N19-N20)：累計加分
-   - 排除條件 (E1-E18 全 role 通用；default 啟用 E20b/c/d, E21-E24, E26-E29；E19/E20a/E25 全 role 通用)：命中任一項即排除
-   - 動態調整 (D1-D6, D6b, D15 全 role；default/space-manager 啟用 D7、D12；space-manager 額外啟用 D11/D13/D14)
+2. 依據 `references/screening_rules.md` 中的規則進行評分（各層完整條件編號與定義以 `screening_rules.md` 與 `role_overlays/<role>.md` 為準）：
+   - 必要條件 (M 層)：至少命中一項才納入候選池
+   - 加分條件 (N 層)：全 role 通用加分；default/space-manager 另啟用 BIM 共現加分，space-manager 再加空間/法規/跨系統加分。累計加分
+   - 排除條件 (E 層)：全 role 通用排除條件 + default/space-manager overlay 專屬防呆。命中任一項即排除
+   - 動態調整 (D 層)：全 role 通用動態扣分 + 角色專屬降分（default/space-manager 的 BIM 純度降級、space-manager 的傳統基層/純土建降級等）
 3. 輸出候選人姓名一覽表與各人的命中理由摘要。
 
 **執行指令**（雙角色架構，輸入檔統一為 `ANALYSIS.md`）：
@@ -65,27 +66,40 @@ D:\green-tools\python-3.14.2-embed-amd64\python.exe scripts/screen_candidates.py
    - 這份名單是否有**漏選**？請提供漏選的人名。
    - 是否有**誤選**？請指出不應入選的人名。
 
-### 步驟 4：疊代學習 `/improve`（關鍵步驟）
-根據使用者的回饋，Agent 必須執行以下 **四個子步驟**：
+   > 回饋的處理見步驟 4.0（名單蒐集階段）：**漏選 → append `qualify.md`；誤選 → append `unqualify.md`**，此階段只蒐集、**不改規則**。
 
-#### 4.1 漏選/誤選原因分析
-1. **分析漏選原因**：該人的哪些特徵未被現有規則捕捉？需要增加什麼關鍵字或條件？
-2. **分析誤選原因**：該人為何被錯誤納入？需要強化什麼排除條件？
+### 步驟 4：疊代學習 `/improve`（關鍵步驟，「先蒐集，後分析」雙階段）
+
+> **v11.5（2026-07-08）改版**：捨棄「每批 `/filter` 後立即改規則」的舊模式（單批樣本量小、口語記憶依賴、易過度擬合單批特例、無法跨批次累積）。改為**先跨批次累積回饋，樣本足量後才統一分析落地規則**。
+
+#### 4.0 名單蒐集階段（每次 `/filter` 後可重複多輪；此階段嚴禁改規則）
+使用者確認 `/filter` 結果後，回饋通常分兩種。Agent 只做「取區塊 → append」，**不得改規則/改 `screen_candidates.py`/進入 4.1 之後的分析**：
+- **排除/誤選回饋**（引擎放行但使用者判定不合格，false positive）→ 從 `ANALYSIS.md` 取該人完整資料區塊，**append（不取代）**寫入專案根目錄 `unqualify.md`。
+- **漏選/入選回饋**（引擎排除但使用者判定合格，false negative）→ 從 `ANALYSIS.md` 取該人完整資料區塊，**append（不取代）**寫入專案根目錄 `qualify.md`。
+- 兩檔以「代碼：」為唯一鍵去重，**皆為 append-only**；**Agent 嚴禁自動清空或歸檔**，僅使用者可人為處理。
+- `screen_candidates.py` 下一次 `/filter` 會自動比對此兩檔：命中 `unqualify.md` 標 ★（應排除卻仍入選）、命中 `qualify.md` 標 ☆ 並列「仍被引擎漏掉」清單，供蒐集進度追蹤。
+
+**切換信號**：累積數輪、樣本足量後，使用者直接說「Step 2」／`/improve`，才進入下列規則疊代四子步驟（4.1~4.4）。
+
+#### 4.1 漏選/誤選原因分析（讀 `unqualify.md` + `qualify.md` 逐人歸因）
+1. **分析誤選原因**（讀 `unqualify.md`）：引擎為何放行這些人？需要強化/新增什麼排除條件（E/D）？
+2. **分析漏選原因**（讀 `qualify.md`）：引擎為何排除這些人？哪條規則過嚴、或缺什麼加分條件（N）／關鍵字？
+3. **跨批次統計歸類**：因兩檔已累積 20+ 筆樣本，須做統計（如「誤選中 60% 是製造端設備工程師包裝成廠務」），**只對統計顯著的模式改規則**，避免過度擬合單一案例。
 
 #### 4.2 更新規則與日誌
-3. **更新 `references/screening_rules.md`**（純規則文件）：
+1. **更新 `references/screening_rules.md`**（純規則文件）：
    - 在「第二節 篩選規則」中新增/修正 M/N/E 條件
    - 在「第三節 關鍵字清單」中補充新發現的關鍵字
    - 在「第四節 篩選經驗法則」中沉澱新的觀察
    - 若使用者回答了 Q&A，將答案從「第五節」移入正式規則
    - 在「第六節 版本紀錄」中記錄本次變更
    - **重要：`screen_candidates.py` 中的關鍵字陣列必須與 `screening_rules.md` 保持同步。** 若只改規則文件不改程式碼，篩選引擎不會生效。
-4. **追加 `references/iteration_log.md`**（疊代日誌）：
-   - 記錄本批次的來源統計（原始行數、唯一候選人數）
-   - 記錄已確認入選/誤選/漏選的名單
+2. **追加 `references/iteration_log.md`**（疊代日誌）：
+   - 記錄本輪蒐集的來源統計（`unqualify.md`／`qualify.md` 各累積筆數、跨批次範圍）
+   - 記錄統計歸類結果與已確認入選/誤選/漏選的名單
    - 記錄使用者回饋的原文
    - 此文件只做 Append，絕不刪除歷史記錄
-5. **追加 `references/historical_selections.csv`**（歷史選人紀錄）：
+3. **追加 `references/historical_selections.csv`**（歷史選人紀錄）：
    - 將本批次的 `HR_Data_Summary.csv` 全部資料追加至此（加上 batch 欄位標記批次）
    - 此為技能層內唯一允許存放的 CSV 檔案，只做 Append
    - 用途：跨批次分析選人特徵趨勢，精煉篩選規則
@@ -128,6 +142,15 @@ Agent 在完成規則更新後，**必須主動**進行以下反思分析：
 - 根據使用者對問題選項的回覆，**進一步精煉規則**
 - 若使用者確認為「誤判」或「單次需求」，則不改動規則，僅在 iteration_log 中記載
 - 若使用者確認需調整，則更新 screening_rules.md 與 screen_candidates.py
+
+#### 4.5 品質稽核迴圈（規則落地後強制執行，v11.10 升級）
+> 目的：確保本輪 improve **沒有以人名作為封殺依據**（違反 CLAUDE.md 4.11 / v8.0「廢除人名黑白名單」），避免候選人更新履歷/職能提升後仍被姓名比對誤漏。
+1. **紀錄（Sonnet）**：spawn `improve-recorder`（固定 Sonnet、單次執行）。它**清空前次紀錄**並整檔覆寫 `references/improve_record.md`（latest-only，非 append）：步驟軌跡、決策點、規則變更與修正理由、受影響候選人（含命中依據）、去識別化自述、回歸結果。
+2. **稽核（Opus）**：spawn `improve-verifier`（固定 Opus）。稽核 (A) 去識別化（程式碼無姓名級控制流）+ (B) 投機辨識（跑「姓名匿名化黃金測試」：診斷測試檔姓名全匿名後重跑，判決集合須與匿名前完全一致）。
+3. **迴圈**：PASS → 進 4.6；FAIL → 依問題節點把姓名捷徑改為可泛化特徵 → 重跑 `regression_check.py` → 再 spawn recorder 清空重錄 → 再 spawn verifier 複驗，直到 PASS。⛔ 未 PASS 不得進 4.6。
+
+#### 4.6 文件對齊（Fable5 指揮 Opus，收尾）
+稽核 PASS 後，spawn **Fable 5** agent 稽核 `CLAUDE.md`／`README.md`／`.agent/skills/**/*.py`／`*.md`／overlay／command 是否與本輪版本一致並產出對齊計畫，再 spawn **Opus** agent 依計畫落地文件修正（Fable5 規劃、Opus 執行），回報使用者。
 
 ### 步驟 5：結案審閱 `/review`（在 `/merge` 之後執行）
 > **此步驟不在本技能（hr-talent-screener）的 `/filter` 流程中直接執行。**
@@ -185,6 +208,13 @@ Agent 基於 `HR_Data_Summary.csv` 執行最終審閱（**2026-07-02 起含閘�
    - 本次規則變更摘要 + 回歸測試結果
    - 累計規則版本
 10. **正式結案**：使用者確認後（**結案永遠由使用者，不可代打**），spawn `gatekeeper`（MODE: RECORD）記錄 closure。本次找人任務完成，規則已沉澱為下一次 `/filter` 的養分
+11. **（結案後·可選）納入回歸黃金集**：把本批已審閱定案的 12 欄 `HR_Data_Summary.csv` 追加至 `references/historical_selections.csv`，讓下一輪 `regression_check.py` 保護本批人類判決不被未來規則悄悄翻盤：
+    ```
+    D:\green-tools\python-3.14.2-embed-amd64\python.exe scripts/append_review_to_golden.py --role=<role> --batch=<role>-<YYYY-MM-DD>-review --dry-run
+    D:\green-tools\python-3.14.2-embed-amd64\python.exe scripts/append_review_to_golden.py --role=<role> --batch=<role>-<YYYY-MM-DD>-review
+    ```
+    - 冪等守門：同 batch 重複追加會被擋（除非 `--force`）；append-only 不改既有列。
+    - 追加後可跑 `regression_check.py --accept` 一次（**需使用者核准**），吸收本批新增列的「CSV 摘要 vs 完整履歷」既存誤差進 baseline；引擎能由 CSV 摘要重現的判決（如命中 E15b/E12 者）即獲實質回歸保護，其餘因摘要資訊量不足者由 baseline 吸收。
 
 > ⚠️ 這是一個**逐次疊代增加準度**的過程。每次執行，人才候選計畫都會變得更精準。
 
@@ -197,5 +227,6 @@ Agent 基於 `HR_Data_Summary.csv` 執行最終審閱（**2026-07-02 起含閘�
 6. **專案根目錄保持乾淨**：`HR_Data_Summary.csv` 永遠只保留當批次的最新版（覆蓋）。歷史數據僅存放於 `references/historical_selections.csv` 這一個 CSV 檔案中。
 7. **每批次獨立評估**：即使候選人跨批次重複出現，仍需獨立評分，因為候選人可能更新了自己的履歷資訊。
 8. **廢除人名黑/白名單**：v8.0 起不再使用永久人名名單進行強制納入/排除。所有判斷純粹依賴 M/N/E 規則與關鍵字匹配。歷史回饋的價值應提煉為規則，而非綁定個人姓名。
-9. **落差分析為必要步驟**：每次 `/improve` 結束前，必須執行落差分析並向使用者提出問題選項，不可省略。
+9. **落差分析為必要步驟**：每次 `/improve` 疊代階段結束前，必須執行落差分析並向使用者提出問題選項，不可省略。
+10. **蒐集與疊代分離（「先蒐集，後分析」）**：名單蒐集階段（append `qualify.md`／`unqualify.md`）**嚴禁**改規則；兩檔 append-only、以「代碼：」去重、Agent 不得自動清空或歸檔。規則變更一律待使用者說「Step 2」進入疊代階段，且只對跨批次統計顯著的模式落地，避免過度擬合單批特例。
 

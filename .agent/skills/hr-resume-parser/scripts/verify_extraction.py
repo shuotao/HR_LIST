@@ -40,6 +40,9 @@ except ImportError:
 def normalize(text):
     """NFKC + 移除空白，用於比對。"""
     text = unicodedata.normalize('NFKC', text)
+    # Custom normalization for CJK Radicals not covered by NFKC
+    text = text.replace('\u2ea0', '民').replace('\u2e8f', '民').replace('\u2e98', '民')
+    text = text.replace('\u2ed1', '長').replace('\u2ec4', '西').replace('\u2ed4', '門')
     return text.replace(" ", "").replace("\n", "").replace("\r", "").replace("　", "")
 
 

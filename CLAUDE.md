@@ -76,14 +76,15 @@ Step 4: /review — 結案：基於 CSV 全面審閱、落差確認、精煉規�
 ### 技能一：hr-talent-screener（人才篩選）— 對應 `/filter`
 - **輸入**：`ANALYSIS.md`（104 系統擷取的大量候選人摘要清單）
 - **處理**：三階段清洗（雜訊移除 → 代碼去重 → 學歷分類排序）→ M/N/E 規則評分
-- **產出**：候選人名單 + 各人命中理由摘要
+- **產出**：候選人名單 + 各人命中理由摘要（命中 `unqualify.md` 者標 `★`＝應排除卻仍入選；命中 `qualify.md` 者標 `☆`＝應入選，並於結尾另列「仍被引擎漏掉」清單）
 - **SKILL 文件**：`.agent/skills/hr-talent-screener/SKILL.md`
 - **腳本**：
   - `scripts/pipeline_clean.py` — 三階段清洗（Stage 1: 雜訊移除, Stage 2: 代碼去重, Stage 3: 學歷分類排序）
-  - `scripts/screen_candidates.py` — 評分篩選引擎（雙層 M1 關鍵字, M2 產業比對, M3 經歷數, N1-N17 加分, E1-E17 排除, D1-D5 動態扣分, 門檻=20分）
+  - `scripts/screen_candidates.py` — 評分篩選引擎（雙層 M1 關鍵字, M2 產業比對, M3 經歷數, N/E/D 多層加分/排除/動態扣分（完整見 screening_rules.md）, 門檻=20分；自帶 unqualify.md/qualify.md 比對標記 ★/☆ 並列出漏網清單）
   - `scripts/generate_review_decisions.py` — /review 自動產生 `review_decisions.json`（讀 CSV + 對應 .md 重跑 score_candidate，支援 `--role`）
   - `scripts/apply_review_decisions.py` — /review 把判決寫入 CSV 並驗證 CSV↔PDF 一致性
   - `scripts/regression_check.py` — 黃金集回歸測試（規則變更守門員；重跑 historical_selections.csv，偵測新翻盤，baseline 機制吸收 CSV 摘要既存誤差）
+  - `scripts/append_review_to_golden.py` — /review 結案後把 12 欄 `HR_Data_Summary.csv` 追加至回歸黃金集 `historical_selections.csv`（欄位映射 drop 序號/Email + prepend batch/角色；冪等守門避免重複 batch；append-only；支援 `--dry-run`）
   - `scripts/pick_candidates_util.py` — 輔助工具
 
 ### 技能二：hr-resume-parser（履歷解析）— 對應 `/merge`
@@ -98,12 +99,33 @@ Step 4: /review — 結案：基於 CSV 全面審閱、落差確認、精煉規�
   - `scripts/verify_extraction.py` — 防幻覺手動抽驗（直接讀 PDF 原始檔比對 CSV，預設 15 組，支援指定姓名清單）
 - **QAQC**：腳本自動抽檢 15 組 + 必須執行 `verify_extraction.py` 另抽 15 組比對原始 PDF（非 .md）
 
-### 疊代學習 — 對應 `/improve`
-- **輸入**：`HR_Data_Summary.csv`（已確認的選人結果）或使用者的漏選/誤選回饋
-- **處理**：比對選人特徵 vs 現行規則 → 找出缺口 → 更新規則與程式碼
+### 疊代學習 — 對應 `/improve`（「先蒐集，後分析」雙階段模型）
+
+> **核心哲學（v11.5, 2026-07-08）**：捨棄「每批 `/filter` 後立即改規則」的舊模式（單批樣本量小、口語記憶依賴、易過度擬合單批特例、無法跨批次累積）。改為**先跨批次累積回饋樣本至 `unqualify.md`／`qualify.md`，樣本足量後才統一分析、統計歸類、落地規則**。
+
+- **輸入（階段二分析素材）**：
+  - `unqualify.md`（誤選累積：引擎放行但使用者判定不合格者，false positive）
+  - `qualify.md`（漏選累積：引擎排除但使用者判定合格者，false negative）
+  - 或既有 `HR_Data_Summary.csv`（已確認選人結果，輔助佐證）
+
+- **階段一 · 名單蒐集（每次 `/filter` 後可重複多輪；此階段嚴禁改規則）**：
+  - **嚴禁**改規則、改 `screen_candidates.py`、進入 `/improve` 疊代分析——這階段只蒐集、不分析。
+  - 收到**排除/誤選**回饋（如「排除 林XX」「unqualify 王XX」）→ 從 `ANALYSIS.md` 取該人完整資料區塊，以 **append（不取代）** 寫入 `unqualify.md`。
+  - 收到**漏選/入選**回饋（如「qualify 張XX」「加回 陳XX」）→ 從 `ANALYSIS.md` 取該人完整資料區塊，以 **append（不取代）** 寫入 `qualify.md`。
+  - 兩檔以「代碼：」為唯一鍵去重，避免重複 append 同一人。**兩檔皆 append-only；Agent 嚴禁自動清空或歸檔**（僅使用者可人為處理）。
+  - 下一次 `/filter` 會自動比對此兩檔：命中 `unqualify.md` 標 ★、命中 `qualify.md` 標 ☆ 並列漏網清單，供蒐集進度追蹤。
+
+- **階段二 · 規則疊代（使用者說「Step 2」／`/improve` 才進入）**：
+  - 讀 `unqualify.md` 逐人歸因：引擎為何放行？→ 找排除規則（E/D）的系統性缺口。
+  - 讀 `qualify.md` 逐人歸因：引擎為何排除？→ 找過嚴規則或缺漏的加分條件（N）／關鍵字。
+  - **跨批次統計歸類**：樣本已達 20+ 筆，須做統計（如「誤選中 60% 是製造端設備工程師包裝成廠務」），**只對統計顯著的模式改規則**，避免過度擬合單一案例。
+  - 落差分析 + 問題選項（Q1: A/B/C）→ 使用者確認後才落地規則。**完成後不清空** `unqualify.md`／`qualify.md`。
+
 - **更新目標**：
-  - `references/screening_rules.md`（規則）+ `screen_candidates.py`（程式碼）
+  - `references/screening_rules.md`（規則）+ `screen_candidates.py`（程式碼，兩者必須同步）
   - `references/iteration_log.md`（日誌追加）+ `references/historical_selections.csv`（歷史資料追加）
+
+- **品質稽核迴圈（v11.10）**：規則落地後強制跑「improve-recorder（Sonnet）紀錄 → improve-verifier（Opus）去識別化 + 投機辨識稽核」同步迴圈，PASS 才收尾（Fable5 規劃 → Opus 落地文件對齊）。編排細節見「多 Agent 編排規範」章節。
 
 ### 結案審閱 — 對應 `/review`
 - **輸入**：`HR_Data_Summary.csv`（/merge 產出的完整履歷結構化資料）
@@ -160,6 +182,16 @@ CLAUDE.md 中「BIM 是組織級基礎工具」是**業務哲學**——說明 B
 | 代打 / 代打閘門 / 幫我過閘門 | spawn `gatekeeper`（MODE: PROXY）代打當前閘門（A 或 B）；查無歷史模式的筆掛起回頭找使用者 |
 | （使用者親自簽核/答題後） | 主 Agent 必須 spawn `gatekeeper`（MODE: RECORD）記錄互動 |
 
+### /improve 名單蒐集速記（2026-07-08 新增）
+
+> 對映 `/improve` 的「先蒐集，後分析」雙階段（詳見「兩大技能 → 疊代學習」章節）。蒐集階段**只 append、不改規則**。
+
+| Shorthand | 對映動作 |
+|-----------|----------|
+| 排除 XXX / unqualify XXX / 誤選 XXX | 從 `ANALYSIS.md` 取 XXX 完整區塊 **append** 至 `unqualify.md`（蒐集階段，**嚴禁改規則**） |
+| 加回 XXX / qualify XXX / 漏選 XXX / 入選 XXX | 從 `ANALYSIS.md` 取 XXX 完整區塊 **append** 至 `qualify.md`（蒐集階段，**嚴禁改規則**） |
+| Step 2 / step2 / `/improve`（在累積數輪之後） | 結束蒐集、進入規則疊代階段（讀 unqualify.md + qualify.md 統計分析後才落地規則） |
+
 ---
 
 ## 指令速查
@@ -197,7 +229,10 @@ D:\green-tools\python-3.14.2-embed-amd64\python.exe
 ```
 
 ### /improve [--role=<role>]
-手動流程：分析 HR 回饋 → 更新規則（default 寫主規則檔 + `role_overlays/default.md`；space-manager 寫 `role_overlays/space-manager.md`）+ `screen_candidates.py` → 追加 `iteration_log.md` + `historical_selections.csv`（含「角色」欄）
+「先蒐集，後分析」雙階段（完整說明見「疊代學習」章節）：
+- **階段一 · 名單蒐集**：收到回饋且仍在蒐集階段時，**嚴禁**改規則/改程式碼/進入疊代。排除/誤選 → append 至 `unqualify.md`；漏選/入選 → append 至 `qualify.md`（皆從 `ANALYSIS.md` 取完整資料區塊，以「代碼：」去重，append-only 不取代、Agent 不清空）。
+- **階段二 · 規則疊代**（使用者說「Step 2」才進入）：讀 `unqualify.md`（誤選）+ `qualify.md`（漏選）逐人歸因 → 跨批次統計歸類（僅對統計顯著模式改規則）→ 更新規則（default 寫主規則檔 + `role_overlays/default.md`；space-manager 寫 `role_overlays/space-manager.md`）+ `screen_candidates.py` → 落差分析 Q&A → 追加 `iteration_log.md` + `historical_selections.csv`（含「角色」欄）
+- **品質稽核迴圈（v11.10 升級，規則落地後強制）**：規則落地後必跑「Sonnet 紀錄 → Opus 稽核」迴圈，確保 improve **未以人名作為封殺依據**（守 4.11 / v8.0）。① spawn `improve-recorder`（Sonnet、單次、**清空前次**整檔覆寫 `references/improve_record.md`）記錄步驟/決策/修正理由/受影響人命中依據；② spawn `improve-verifier`（Opus）稽核**去識別化**（無姓名級控制流）+ **投機辨識**（姓名匿名化黃金測試：測試檔姓名全匿名後重跑，判決集合須與匿名前完全一致）；③ FAIL → 改姓名捷徑為可泛化特徵 + 重跑回歸 + 重錄 + 複驗，PASS 才收尾。收尾 spawn **Fable5**（規劃文件對齊）→ **Opus**（落地）校對 CLAUDE/README/.py/.md 一致性。詳見 `.claude/commands/improve.md` 步驟 7–8 與 `SKILL.md` 4.5–4.6。
 
 ### /review [--role=<role>]
 半自動流程（**所有步驟必須使用官方腳本，嚴禁自寫一次性 .py**）。**2026-07-02 起含閘門機制**（詳見「閘門機制與 gatekeeper Agent」章節）：
@@ -229,6 +264,12 @@ D:\green-tools\python-3.14.2-embed-amd64\python.exe
 #         代打模式下 FAIL 一律停下等使用者裁決
 
 # Step 8：結案確認（永遠由使用者，不可代打）→ gatekeeper RECORD 記錄 closure
+
+# Step 9（結案後·可選）：把本批已審閱定案的 12 欄 CSV 追加至回歸黃金集，讓下一輪回歸守門保護本批人類判決
+#         （先 --dry-run 預覽；冪等守門會擋重複 batch）
+"D:/green-tools/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/append_review_to_golden.py --role=default --batch=<角色>-<YYYY-MM-DD>-review --dry-run
+"D:/green-tools/python-3.14.2-embed-amd64/python.exe" .agent/skills/hr-talent-screener/scripts/append_review_to_golden.py --role=default --batch=<角色>-<YYYY-MM-DD>-review
+#         追加後可跑 regression_check.py --accept 一次，把本批新增列的 CSV 摘要既存誤差吸收進 baseline（需使用者核准）
 ```
 
 `review_decisions.json` 格式：
@@ -266,6 +307,33 @@ D:\green-tools\python-3.14.2-embed-amd64\python.exe
 - `references/gate_interactions.jsonl` — 閘門互動流水帳（**append-only**，只追加不修改）
 - `references/gate_playbook.md` — 決策模式手冊（gatekeeper 自動蒸餾；PROXY 代打的唯一判準來源）
 - `references/regression_baseline.json` — 回歸測試已知誤差基準（僅由 regression_check.py 讀寫；CSV 摘要 vs 完整履歷的既存誤差由此吸收）
+
+---
+
+## 多 Agent 編排規範 (Multi-Agent Orchestration Spec)（v11.10 上線）
+
+> **核心原則**：本專案凡 spawn sub-agent，**每支 agent 的模型（orchestrator model）必須於 spawn 時顯式指定**，嚴禁依賴 harness 的 default 模型繼承。default 繼承常造成兩種浪費／失準：①該用 Sonnet 的機械性工作誤吃 Opus（成本浪費）；②該用 Opus 的嚴謹稽核誤吃小模型（品質失準）。**模型選用＝成本與能力的刻意取捨，必須顯式、不可省略。**
+
+### 目前唯一的「多 Agent + 同步驅動 LOOP」：/improve Step 2 品質稽核迴圈
+- **全專案僅 `/improve`（Step 2）規則落地後的「品質稽核迴圈」屬於「多 agent 且同步驅動的迴圈」編排。** 其餘 agent 使用情境（如 /review 的 `gatekeeper`）皆為**單次、單 agent** 的 spawn，不構成迴圈。
+- **同步驅動（前景序列相依）**：此迴圈所有 agent 一律 `run_in_background: false`——recorder 先產出紀錄 → verifier 依紀錄稽核 → 主 agent 依稽核結果決定是否迴圈。**嚴禁背景並行**（後手 agent 依賴前手輸出，並行會拿到空/舊資料）。
+
+### 各 Agent 的顯式模型與職責（固定綁定，不吃 default）
+| Agent | 固定模型（spawn 時顯式帶入） | 職責 | 為何綁這個模型 |
+|-------|------------------------------|------|----------------|
+| `improve-recorder` | **Sonnet**（`claude-sonnet-5`） | 記錄 improve 步驟/決策/修正理由；**latest-only 整檔覆寫** `references/improve_record.md`（清空前次，非 append） | 機械性彙整、成本敏感，Sonnet 足矣；用 Opus 是浪費 |
+| `improve-verifier` | **Opus**（`claude-opus-4-8`） | 去識別化 + 投機辨識稽核（含**姓名匿名化黃金測試**：測試檔姓名全匿名後重跑，判決集合須與匿名前完全一致） | 需嚴謹推理與反投機判斷，須 Opus |
+| 文件對齊·指揮 | **Fable 5**（`claude-fable-5`） | 稽核文件生態（CLAUDE/README/.py/.md/overlay/command）一致性、產出對齊計畫 | 統籌/規劃，Fable5 |
+| 文件對齊·執行 | **Opus**（`claude-opus-4-8`） | 依 Fable5 計畫落地跨檔文件修正 | 跨檔精確編修，須 Opus |
+| `gatekeeper`（/review） | 單次 spawn（MODE: RECORD/PROXY，見閘門章節） | 閘門互動記錄/代理 | 單次、非迴圈；模型依 spawn 情境於 prompt 顯式指定 |
+
+### 編排鐵則
+1. **顯式模型**：每次 spawn sub-agent 一律在 spawn 設定顯式帶模型參數（如 Agent 工具 `model` 或 workflow `agent(..,{model})`）；**禁止靠 default 繼承**。
+2. **同步序列**：/improve 稽核迴圈為前景序列（recorder → verifier →（FAIL 時）主 agent 修正 + 重跑回歸 + 重錄 + 複驗），不背景並行。
+3. **迴圈收斂**：verifier **FAIL** → 依問題節點把姓名捷徑改為可泛化特徵（改 `screen_candidates.py`／規則）+ 重跑 `regression_check.py` + 再 spawn recorder 清空重錄 + 再 spawn verifier 複驗，**直到 PASS 才進文件對齊**。
+4. **範疇邊界**：目前**唯 /improve Step 2** 有此多 agent 同步迴圈；未來若新增其他多 agent 迴圈編排，**必須比照本規範顯式指定各 agent 模型、註明是否同步驅動，並更新本表**。
+
+> 落地位置：agent 定義 `.claude/agents/improve-recorder.md`、`.claude/agents/improve-verifier.md`；流程接線見 `.claude/commands/improve.md` 步驟 7–8 與 `SKILL.md` 4.5–4.6。
 
 ---
 
@@ -323,17 +391,20 @@ D:\green-tools\python-3.14.2-embed-amd64\python.exe
 | gate_interactions.jsonl | .agent/skills/hr-talent-screener/references/ | 閘門互動流水帳（append-only） |
 | regression_baseline.json | .agent/skills/hr-talent-screener/references/ | 回歸測試已知誤差基準（僅 regression_check.py 讀寫） |
 | 人才候選計畫.md | 專案根目錄 | 基於首批 56 位選人反推的企業畫像與規則起源 |
+| unqualify.md | 專案根目錄 | 誤選累積名單（引擎放行但判定不合格；append-only，/improve 蒐集階段維護，Agent 不清空；`screen_candidates.py` 比對標 ★） |
+| qualify.md | 專案根目錄 | 漏選累積名單（引擎排除但判定合格；append-only，/improve 蒐集階段維護，Agent 不清空；`screen_candidates.py` 比對標 ☆ 並列漏網清單） |
+| improve_record.md | .agent/skills/hr-talent-screener/references/ | /improve 品質稽核快照（latest-only 整檔覆寫，非 append；由 improve-recorder 產出、improve-verifier 稽核；永久歷史在 iteration_log.md） |
 
 ---
 
 ## 篩選規則體系簡述
 
-篩選引擎依據三層規則對每位候選人評分：
+篩選引擎依據 M/N/E/D 四層規則對每位候選人評分（各層的完整條件編號與定義以 `screening_rules.md` 為準）：
 
-- **必要條件 (M1-M3)**：職稱含機電/廠務/監造等、有 EPC/營造/半導體經歷、3年以上年資。至少命中一項才納入候選池。
-- **加分條件 (N1-N17)**：學歷對口、知名企業、管理職、多系統覆蓋、品管、能源工程、鋼構、高科技建廠核心(N17)等。累計加分。
-- **排除條件 (E1-E17)**：保全/門市/餐飲、非工程職稱、年資不足、純土建、製程製造/研發/光電、低階維修、環安衛、絕對封殺(軟工/展場)、大樓物業、履歷單薄、雜魚經歷、非專業科系、自動化/航太、純軟體/業務。命中任一項即排除。
-- **動態調整 (D1-D5)**：傳統重電降階、年資防呆、廠務維運防呆、製造端降階、採購內業防呆。依條件動態扣分。
+- **必要條件 (M 層)**：職稱含機電/廠務/監造等、有 EPC/營造/半導體經歷、3年以上年資。至少命中一項才納入候選池。
+- **加分條件 (N 層)**：學歷對口、知名企業、管理職、多系統覆蓋、品管、能源工程、鋼構、高科技建廠核心等。累計加分。
+- **排除條件 (E 層)**：保全/門市/餐飲、非工程職稱、年資不足、純土建、製程製造/研發/光電、低階維修、環安衛、絕對封殺(軟工/展場)、大樓物業、履歷單薄、雜魚經歷、非專業科系、自動化/航太、純軟體/業務等。命中任一項即排除。
+- **動態調整 (D 層)**：傳統重電降階、年資防呆、廠務維運防呆、製造端降階、採購內業防呆等。依條件動態扣分。
 
 完整規則定義請參閱 `.agent/skills/hr-talent-screener/references/screening_rules.md`。
 
@@ -407,3 +478,4 @@ D:\green-tools\python-3.14.2-embed-amd64\python.exe
 5. **screening_rules.md vs screen_candidates.py**: 兩者必須同步。只改規則文件不改程式碼，評分不會生效。
 6. **三階段清洗不可跳過**: 即使使用者說「跳過清洗」，仍必須先執行 `pipeline_clean.py`。
 7. **候選人代碼為唯一鍵**: 不可用姓名去重——同名可能是不同人。
+8. **名單蒐集階段禁改規則**: 收到 `/filter` 後的漏選/誤選回饋時，若仍在蒐集階段，只能 append 至 `qualify.md`／`unqualify.md`（皆 append-only，以「代碼：」去重，Agent 不得自動清空或歸檔），**嚴禁**同時改規則或 `screen_candidates.py`。規則變更一律等使用者說「Step 2」進入疊代階段、對統計顯著模式才統一處理，避免過度擬合單批特例。

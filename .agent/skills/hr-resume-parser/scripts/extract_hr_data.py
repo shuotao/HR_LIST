@@ -360,7 +360,7 @@ def process_all():
         md_path = os.path.join(base_dir, md_file)
         try:
             with open(md_path, 'r', encoding='utf-8') as f_read:
-                raw_text = unicodedata.normalize('NFKC', f_read.read()).replace('\x0c', '\n').replace('\r', '\n')
+                raw_text = normalize_text(f_read.read()).replace('\x0c', '\n').replace('\r', '\n')
 
             name_ok = (name in raw_text) if name else False
             age_ok = (age in raw_text) if age else False

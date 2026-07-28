@@ -2,7 +2,7 @@
 
 > **本檔為人類可讀的 overlay 規格快照**。程式碼權威來源：`screen_candidates.py:get_overlay('space-manager')` 與評分權重 `web/backend/bim_scorer.py:ROLE_WEIGHTS['space-manager']`。當文件與程式碼不一致，**以程式碼為準**並回頭修文件。
 >
-> 當前版本：**v0.7**（2026-05-27，3 人 false positive 回饋疊代）。
+> 當前版本：**v0.8**（2026-07-09，落地長期未實作的 D14 傳統基層降級；本輪 2 人誤選 + 1 人漏選回饋）。
 
 ---
 
@@ -21,6 +21,10 @@
 ## 二、Commons 繼承
 
 繼承主規則檔的 M1-M3、E1-E19、D1-D6/D15、N2-N5/N7-N17、CSV 欄位結構。
+
+- **v11.7 all-role Commons**：E5 製造主軸收緊 Q1、E19 致命職稱 ≥2 段不豁免 Q4、新增 E31c 業務/營運/ERP 主軸排除 Q2 — 皆全 role 通用。
+- **v11.9（Batch #52）all-role Commons 追加**：**E5-Q1 設備端收緊**（`MFG_DOMINANT_TOKENS` 補設備工程師/導入/維修/技術支援/黃光；製造主軸解禁改需 BUILD_PROOF 單一即可 或 廠務/無塵室≥2段，移除單一短期廠務title/學術無塵室/VIP公司名解禁）+ **新增 E5c**（對口電機/機械學歷但主軸為技工/維修/製圖/配電且無建廠/設計/高科實質、無管理職 → 排除）。
+- **注意**：E22b / E7b / E15b 為 **default-only**（default overlay 專屬防呆），space-manager **不繼承**。
 
 ---
 
@@ -53,7 +57,7 @@
 |----------|------|
 | **Q1 BIM 開發者解禁** | 具備 BIM 實務（BIM/Revit/Dynamo/API）+ 軟體背景（前端/後端/全端/軟體/App/3d artist）→ 繞過 E17 純軟體封殺 |
 | **Q3 工程顧問 VIP**（v0.5 新增） | AECOM、科進栢誠、Jacobs、WSP、Arup、Arcadis、Buro Happold、Mott MacDonald、鼎漢 + BIM → 完全無條件解禁 E8 |
-| **Q4 高科大廠 VIP** | 漢唐、帆宣、泰興、Exyte、易科德、亞翔、洋基、同開、聖暉 + BIM → 完全無條件解禁 E8 |
+| **Q4 高科大廠 VIP** | 漢唐、帆宣、泰興、Exyte、易科德、亞翔、洋基、同開、聖暉 + BIM → 完全無條件解禁 E8。**（v0.8, 2026-07-09 古芝妍回饋）另豁免 D3/D7 純建模懲罰**：頂尖 EPC 大廠的 BIM 整合＝正牌建廠整合經驗，不視為「BIM 外衣」。清單升格模組常數 `HIGH_TECH_VIP_COMPANIES` + 助手 `_is_high_tech_vip_bim()`。典型樣本：古芝妍（帆宣+洋基 BIM，10→50）。 |
 | **Q5 中鼎內部轉發 VIP**（v0.6 新增，全角色適用） | 履歷甄試歷程含 `@ctci.com` email → +30 強加分，豁免 E2/E4/E6/E8/E19。原則：HR 內部 signal 永遠優先於規則機制。**典型樣本：李承翰（甄試歷程顯示 2026/02/04 轉寄完整履歷給 Charlotte/張國瑋/James @ctci.com）。** |
 
 ### E 條件 escape（v0.6 新增）
@@ -83,7 +87,7 @@
 | **D11 BIM 講師/教學降級** | 在 BIM 角色中兼任講師/教學/助教 → 扣 20 分（反「BIM 講師包裝」） |
 | **D12 純建模人員降級** | 同 default (MEP)，但若同時命中「空間 AND 法規」或具備「CSD/套圖/審圖/二次審圖/界面圖/整合圖/Coordination Drawing」能力 → 不扣（v0.5 Q4 例外） |
 | **D13 純土建結構降級** | 履歷大量「柱樑/樑柱/結構設計/結構分析/結構技師/混凝土/鋼筋/配筋/RC結構/SRC/SS結構」字眼但缺 MEP 與空間整合 → 扣 15 分 |
-| **D14 傳統基層降級** | N6/N18/N19/N20 全部未命中（完全缺乏 BIM/空間/法規/跨系統亮點）→ 扣 25 分 |
+| **D14 傳統基層降級** | N6/N18/N19/N20 全部未命中（完全缺乏 BIM/空間/法規/跨系統亮點）→ 扣 25 分。**（v0.8 落地程式碼；規則自 v0.4 即文件化，長期漏實作，本版補齊 rules↔code 同步。典型樣本：賴柏宏——建設/室內裝修/工地管理，零空間管理亮點，28→3）** |
 | **D17 無管理潛力**（v0.6 新增） | 年資 ≥3 年 + 全段無真實管理抬頭（主任/課長/副理/經理/協理/處長/總監，「總監助理」等假抬頭視為無）+ 無「規劃/整合/廠務/監造/監工/專案/統包/建廠」軌跡 → -25。年齡 ≤30 歲加重至 -35。**PREMIUM_COMPANIES 經歷豁免**。典型樣本：李思穎（29 歲 + 5.5 年單一 BIM工程師抬頭 + 建築事務所設計師 + 無大廠經歷）|
 | **D7 加重對非本科**（v0.6 新增） | 原 D7 BIM-only -15。若 edu 不含 EDU_KEYWORDS（非本科）→ 加重至 -25。典型樣本：游旻姍（輔仁織品服裝 + 君禾 BIM 繪圖 + 騰駿營造）|
 
@@ -140,4 +144,5 @@
 建築技術規則、消防法規、無障礙、綠建築、IECC、ASHRAE、NFPA、規範、法規、標準、Code、合規、申照、檢查、查驗、執照圖、申照圖、性能式審查、WELL、鉑金級、PIC/S、GMP、local code
 
 ### CROSS_SYSTEM_TOKENS（N20 用）
-跨系統、界面整合、界面協調、Coordination、Clash、衝突檢測、碰撞檢測、Integration、整合、協調、跨領域、Multi-discipline、CSD/SEM、CSD&SEM、PCM&承攬商、PCM承攬商
+- **具體詞（`CROSS_SYSTEM_SPECIFIC`，恆計入 N20）**：跨系統、界面整合、界面協調、Coordination、Clash、衝突檢測、碰撞檢測、跨領域、Multi-discipline、CSD/SEM、CSD&SEM、PCM&承攬商、PCM承攬商
+- **裸詞（`CROSS_SYSTEM_LOOSE`，v0.8 收緊）**：整合、協調、Integration —— 須與工程領域上下文 `CROSS_SYSTEM_CONTEXT`（機電/MEP/管線/空調/建築/結構/施工圖…，**刻意排除**裸「電力」「建設」以免公司名污染）共現才計入 N20，避免 ERP/營運「系統整合」誤命中（蘇庭漢型）。判定統一走 `_n20_cross_hits()`，N20 與 D14 共用。

@@ -103,33 +103,47 @@ python scripts/screen_candidates.py ANALYSIS.md --role=space-manager
 2. 以代碼為唯一鍵去除重複候選人
 3. 依學歷科系分三區塊重新排序（土木建築 / 機電相關 / 其他）
 
-**篩選規則（v8.13）：**
+**篩選規則（現行 v11.9，完整定義見 screening_rules.md）：**
+
+規則分 M/N/E/D 四層（N 至 N20、E 至 E34 含 E5c、D 至 D17；各層完整條件編號與定義以 `screening_rules.md` 與 `role_overlays/<role>.md` 為準）：
 
 | 類型 | 說明 |
 |------|------|
-| 必要條件 (M1-M3) | 職稱含機電/廠務/監造等、有 EPC/營造/半導體經歷、3年以上年資 |
-| 加分條件 (N1-N17) | 學歷對口、知名企業、管理職、多系統覆蓋、品管、能源工程、高科技建廠核心等 |
-| 排除條件 (E1-E17) | 保全/門市/餐飲、非工程職稱、年資不足、純土建、製程製造、低階維修、環安衛、軟體/研發/光電、公寓物業、雜魚履歷、自動化/航太防呆等 |
-| 動態調整 (D1-D5) | 傳統重電降階、年資防呆、廠務維運防呆、製造端降階、採購內業防呆 |
+| 必要條件 (M 層) | 職稱含機電/廠務/監造等、有 EPC/營造/半導體經歷、3年以上年資 |
+| 加分條件 (N 層) | 學歷對口、知名企業、管理職、多系統覆蓋、品管、能源工程、高科技建廠核心等 |
+| 排除條件 (E 層) | 保全/門市/餐飲、非工程職稱、年資不足、純土建、製程製造、低階維修、環安衛、軟體/研發/光電、公寓物業、雜魚履歷、自動化/航太防呆等 |
+| 動態調整 (D 層) | 傳統重電降階、年資防呆、廠務維運防呆、製造端降階、採購內業防呆 |
 
 完整規則定義：`.agent/skills/hr-talent-screener/references/screening_rules.md`
 
 ---
 
-## Step 2：精煉（/improve）
+## Step 2：精煉（/improve）— 「先蒐集，後分析」雙階段
 
-使用者確認 `/filter` 結果後，針對漏選/誤選回饋進行落差分析，更新篩選規則與程式碼。
+不再每批 `/filter` 後立即改規則，而是先跨批次累積回饋，樣本足量後才統一分析落地。
 
-**更新目標：**
+**階段一 · 名單蒐集（每次 `/filter` 後可重複多輪，此階段不改規則）：**
+- 排除/誤選回饋（引擎放行但判定不合格）→ 從 `ANALYSIS.md` 取完整區塊 append 至 `unqualify.md`
+- 漏選/入選回饋（引擎排除但判定合格）→ 從 `ANALYSIS.md` 取完整區塊 append 至 `qualify.md`
+- 兩檔以「代碼：」去重、append-only，**Agent 不清空**；下一次 `/filter` 會自動標 ★（unqualify）／☆（qualify）
+
+**階段二 · 規則疊代（使用者說「Step 2」才進入）更新目標：**
 - `screening_rules.md` — 新增/修正 M/N/E/D 條件與關鍵字
 - `screen_candidates.py` — 同步程式碼中的關鍵字與評分邏輯
-- `iteration_log.md` — 追加本批次日誌
+- `iteration_log.md` — 追加本輪日誌
 - `historical_selections.csv` — 追加歷史選人紀錄
 
+**品質稽核迴圈（v11.10 起，規則落地後強制）：**
+規則一旦落地，必須跑一輪多 Agent 品質稽核，確保本輪 improve **沒有以人名作為封殺依據**（守「廢除人名黑白名單」原則）：
+1. **紀錄（Sonnet）** — spawn `improve-recorder`，整檔覆寫 `references/improve_record.md`（latest-only，非 append）：步驟軌跡、決策點、規則變更理由、受影響候選人（含命中依據）、去識別化自述、回歸結果
+2. **稽核（Opus）** — spawn `improve-verifier`，稽核 (a) 去識別化（程式碼無姓名級控制流）+ (b) 投機辨識（跑「姓名匿名化黃金測試」：診斷測試檔姓名全匿名後重跑，判決集合須與匿名前完全一致）
+3. **迴圈** — FAIL → 把姓名捷徑改為可泛化特徵 → 重跑回歸 → 重錄 → 複驗，直到 PASS
+4. **收尾** — PASS 後 Fable5 規劃跨檔文件對齊、Opus 落地文件修正（本 README 即由此迴圈維護）
+
 **疊代原則：**
-- 每位被排除的候選人必須歸因到具體的規則缺口
-- 新增規則必須同時更新 `screening_rules.md`（文件）與 `screen_candidates.py`（程式碼）
-- 修改後立即重跑 `/filter` 驗證排除效果
+- 讀 `unqualify.md`（誤選）+ `qualify.md`（漏選）逐人歸因，做跨批次統計，只對統計顯著模式改規則
+- 每個規則缺口必須歸因到具體條件；新增規則必須同時更新 `screening_rules.md`（文件）與 `screen_candidates.py`（程式碼）
+- 修改後立即重跑 `/filter` 驗證效果；完成後不清空 `unqualify.md`／`qualify.md`
 
 ---
 
@@ -233,7 +247,7 @@ gatekeeper 會讀取 `gate_playbook.md`（它從你歷次簽核中蒸餾出的�
 
 ### 回歸測試 FAIL 時會發生什麼
 
-`regression_check.py` 會用歷史已確認的 330 筆選人紀錄重跑新規則。若有「歷史已確認正式候選的人被新規則排除」（或反向）即 FAIL 並列出翻盤名單：
+`regression_check.py` 會用歷史已確認的選人紀錄（`historical_selections.csv`，隨批次追加成長）重跑新規則。若有「歷史已確認正式候選的人被新規則排除」（或反向）即 FAIL 並列出翻盤名單：
 
 - 翻盤是**刻意的**（新規則本來就要排除這類人）→ 你核准後 Agent 跑 `--accept` 更新基準
 - 翻盤是**意外的** → Agent 退回修正規則，不落地
@@ -272,13 +286,19 @@ gatekeeper 會讀取 `gate_playbook.md`（它從你歷次簽核中蒸餾出的�
 | 文件 | 位置 | 用途 |
 |------|------|------|
 | 人才候選計畫.md | 專案根目錄 | 基於歷史選人反推的篩選規則與企業畫像 |
+| unqualify.md | 專案根目錄 | 誤選累積名單（引擎放行但判定不合格；append-only，/improve 蒐集階段維護，比對標 ★） |
+| qualify.md | 專案根目錄 | 漏選累積名單（引擎排除但判定合格；append-only，/improve 蒐集階段維護，比對標 ☆） |
 | screening_rules.md | .agent/skills/hr-talent-screener/references/ | 跨批次永久有效的純規則手冊（M/N/E/D） |
 | iteration_log.md | .agent/skills/hr-talent-screener/references/ | 疊代日誌（每批次追加，不刪除） |
 | historical_selections.csv | .agent/skills/hr-talent-screener/references/ | 歷史選人紀錄（跨批次累積） |
 | clear_RULE.md | .agent/skills/hr-talent-screener/references/ | 三階段清洗規則定義 |
+| improve_record.md | .agent/skills/hr-talent-screener/references/ | /improve 品質稽核快照（latest-only 整檔覆寫，非 append；improve-recorder 產出、improve-verifier 稽核） |
+| regression_baseline.json | .agent/skills/hr-talent-screener/references/ | 回歸測試已知誤差基準（僅 regression_check.py 讀寫，吸收 CSV 摘要 vs 完整履歷既存誤差） |
 | gate_playbook.md | .agent/skills/hr-talent-screener/references/ | 閘門決策手冊（gatekeeper 自動蒸餾，代打判準來源） |
 | gate_interactions.jsonl | .agent/skills/hr-talent-screener/references/ | 閘門互動流水帳（append-only，user/agent-proxy 判決皆入帳） |
 | gatekeeper.md | .claude/agents/ | 閘門觀察/代理 subagent 定義（RECORD/PROXY 雙模式） |
+| improve-recorder.md | .claude/agents/ | /improve 品質稽核·紀錄 subagent（固定 Sonnet；整檔覆寫 improve_record.md） |
+| improve-verifier.md | .claude/agents/ | /improve 品質稽核·稽核 subagent（固定 Opus；去識別化 + 姓名匿名化黃金測試） |
 | CLAUDE.md | 專案根目錄 | **專案唯一憲法**（Agent 執行守則，所有規則的單一權威來源） |
 | GEMINI.md | 專案根目錄 | 單行指標，指向 CLAUDE.md（嚴禁追加內容） |
 
